@@ -1,0 +1,206 @@
+@extends('layouts.app')
+
+@section('content')
+<div class="w-full py-8 px-6">
+
+    <div class="bg-white shadow-sm rounded-lg p-4 md:p-8 mb-6">
+        <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">Filter Data</h2>
+        
+        <div class="flex flex-col lg:flex-row gap-4 lg:gap-6 lg:items-end">
+            <!-- Filter Inputs - Mobile: vertical stack, Desktop: horizontal grid -->
+            <div class="flex-1 space-y-4 lg:space-y-0 lg:grid lg:grid-cols-4 lg:gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Mulai</label>
+                    <input type="date" id="filter-start-date"
+                           value="{{ date('Y-m-d') }}"
+                           class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all" style="color-scheme: light;">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Akhir</label>
+                    <input type="date" id="filter-end-date"
+                           value="{{ date('Y-m-d', strtotime('+14 days')) }}"
+                           class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all" style="color-scheme: light;">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Perangkat</label>
+                    <select id="filter-device" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white">
+                        <option value="">Semua Perangkat</option>
+                        <option value="kebun-a">Kebun A</option>
+                        <option value="kebun-b">Kebun B</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Interval Sampling</label>
+                    <select id="filter-interval" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white">
+                        <option value="">Default (Semua Data)</option>
+                        <option value="5">Per 5 Menit</option>
+                        <option value="15">Per 15 Menit</option>
+                        <option value="30">Per 30 Menit</option>
+                        <option value="60">Per 1 Jam</option>
+                        <option value="1440">Per 1 Hari</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Export Button -->
+            <div class="lg:min-w-[180px]">
+                <a href="{{ route('log.export') }}" 
+                   class="block w-full bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-3 rounded-lg shadow-sm transition-all text-center whitespace-nowrap">
+                    Export CSV
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg p-6 shadow-sm mb-8">
+        <h3 class="text-center text-lg font-semibold text-gray-800 mb-4">Statistik Data</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="rounded-lg p-6 bg-gradient-to-br from-green-50 to-green-100 shadow-sm flex flex-col items-start border border-green-200">
+                <div class="text-sm text-gray-600">Total Records</div>
+                <div class="text-3xl font-bold text-green-600 mt-2">{{ $stats['total'] ?? '--' }}</div>
+            </div>
+            <div class="rounded-lg p-6 bg-gradient-to-br from-green-50 to-green-100 shadow-sm flex flex-col items-start border border-green-200">
+                <div class="text-sm text-gray-600">Avg pH</div>
+                <div class="text-3xl font-bold text-green-600 mt-2">{{ $stats['avg_ph'] ?? '--' }}</div>
+            </div>
+            <div class="rounded-lg p-6 bg-gradient-to-br from-green-50 to-green-100 shadow-sm flex flex-col items-start border border-green-200">
+                <div class="text-sm text-gray-600">Avg TDS</div>
+                <div class="text-3xl font-bold text-green-600 mt-2">{{ $stats['avg_tds'] ?? '--' }}<span class="text-lg">ppm</span></div>
+            </div>
+            <div class="rounded-lg p-6 bg-gradient-to-br from-green-50 to-green-100 shadow-sm flex flex-col items-start border border-green-200">
+                <div class="text-sm text-gray-600">Avg Temperature</div>
+                <div class="text-3xl font-bold text-green-600 mt-2">{{ $stats['avg_temp'] ?? '--' }}<span class="text-lg">°C</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg p-6 shadow-sm">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Data History</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left border-collapse">
+                <thead class="bg-green-50 border-b border-green-200">
+                    <tr class="text-base font-semibold text-gray-700">
+                        <th class="py-4 px-4">Tanggal</th>
+                        <th class="py-4 px-4">Waktu</th>
+                        <th class="py-4 px-4">Perangkat</th>
+                        <th class="py-4 px-4">pH</th>
+                        <th class="py-4 px-4">TDS (ppm)</th>
+                        <th class="py-4 px-4">Suhu (°C)</th>
+                    </tr>
+                </thead>
+                <tbody id="log-rows" class="text-base text-gray-700">
+                    @if(!empty($rows) && count($rows) > 0)
+                        @foreach($rows as $r)
+                        @php
+                            $datetime = $r->recorded_at ?? $r['recorded_at'] ?? '';
+                            // Remove timezone and microseconds, replace T with space
+                            $datetime = preg_replace('/\.\d+Z?$/', '', $datetime);
+                            $datetime = str_replace(['T', 'Z'], [' ', ''], $datetime);
+                            $parts = explode(' ', $datetime);
+                            $date = $parts[0] ?? '';
+                            $time = $parts[1] ?? '';
+                        @endphp
+                        <tr class="border-b border-gray-100 hover:bg-green-50 transition">
+                            <td class="py-4 px-4">{{ $date }}</td>
+                            <td class="py-4 px-4">{{ $time }}</td>
+                            <td class="py-4 px-4">{{ $r->kebun ?? $r['kebun'] ?? '' }}</td>
+                            <td class="py-4 px-4">{{ $r->ph ?? $r['ph'] ?? '--' }}</td>
+                            <td class="py-4 px-4">{{ $r->tds ?? $r['tds'] ?? '--' }}</td>
+                            <td class="py-4 px-4">{{ $r->suhu ?? $r['suhu'] ?? '--' }}</td>
+                        </tr>
+                        @endforeach
+                    @else
+                        <tr><td colspan="6" class="py-4 text-center text-gray-500">No records</td></tr>
+                    @endif
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-6 flex items-center justify-between">
+            <div class="text-sm text-gray-500">Showing 1 to 25 of 254 entries</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// Auto-refresh: poll /api/logs every 5 seconds with filters
+(() => {
+    const intervalMs = 5000;
+
+    function render(data) {
+        // update stats
+        if (data.stats) {
+            const statCards = document.querySelectorAll('.text-3xl.font-bold');
+            if (statCards[0]) statCards[0].innerHTML = (data.stats.total ?? '--');
+            if (statCards[1]) statCards[1].innerHTML = (data.stats.avg_ph ?? '--');
+            if (statCards[2]) statCards[2].innerHTML = (data.stats.avg_tds ?? '--') + '<span class="text-lg">ppm</span>';
+            if (statCards[3]) statCards[3].innerHTML = (data.stats.avg_temp ?? '--') + '<span class="text-lg">°C</span>';
+        }
+
+        // update rows with raw date from database
+        const tbody = document.getElementById('log-rows');
+        if (!tbody) return;
+        let html = '';
+        if (data.rows && data.rows.length) {
+            data.rows.forEach(r => {
+                let datetime = (r.recorded_at ?? '');
+                // Remove microseconds and timezone, replace T with space
+                datetime = datetime.replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+                const parts = datetime.split(' ');
+                const date = parts[0] ?? '';
+                const time = parts[1] ?? '';
+                html += `<tr class="border-b border-gray-100 hover:bg-green-50 transition">` +
+                    `<td class="py-4 px-4">${date}</td>` +
+                    `<td class="py-4 px-4">${time}</td>` +
+                    `<td class="py-4 px-4">${r.kebun ?? ''}</td>` +
+                    `<td class="py-4 px-4">${r.ph ?? ''}</td>` +
+                    `<td class="py-4 px-4">${r.tds ?? ''}</td>` +
+                    `<td class="py-4 px-4">${r.suhu ?? ''}</td>` +
+                `</tr>`;
+            });
+        } else {
+            html = `<tr><td colspan="6" class="py-4 text-center text-gray-500">No records</td></tr>`;
+        }
+        tbody.innerHTML = html;
+    }
+
+    async function fetchLogs() {
+        try {
+            const startDate = document.getElementById('filter-start-date')?.value || '';
+            const endDate = document.getElementById('filter-end-date')?.value || '';
+            const device = document.getElementById('filter-device')?.value || '';
+            const interval = document.getElementById('filter-interval')?.value || '';
+            
+            const params = new URLSearchParams();
+            if (startDate) params.append('from', startDate);
+            if (endDate) params.append('to', endDate);
+            if (device) params.append('kebun', device);
+            if (interval) params.append('interval', interval);
+            
+            const url = '/api/logs' + (params.toString() ? '?' + params.toString() : '');
+            const res = await fetch(url);
+            if (!res.ok) return;
+            const json = await res.json();
+            render(json);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    // Add change listeners to filters
+    document.getElementById('filter-start-date')?.addEventListener('change', fetchLogs);
+    document.getElementById('filter-end-date')?.addEventListener('change', fetchLogs);
+    document.getElementById('filter-device')?.addEventListener('change', fetchLogs);
+    document.getElementById('filter-interval')?.addEventListener('change', fetchLogs);
+
+    // initial fetch and start auto-refresh
+    fetchLogs();
+    setInterval(fetchLogs, intervalMs);
+})();
+</script>
+
+@endsection

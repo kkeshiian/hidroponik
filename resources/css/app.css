@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+@plugin "daisyui";
+
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+:root {
+    --color-primary: #27ae60;
+    --color-secondary: #2ecc71;
+    --color-accent: #3498db;
+    --color-background: #f8f9fa;
+    --color-surface: #ecf0f1;
+    --color-warning: #f1c40f;
+    --color-error: #e74c3c;
+    --color-text-main: #222f3e;
+    --color-text-secondary: #636e72;
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+/* ...existing code... */

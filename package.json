@@ -1,0 +1,27 @@
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite",
+        "mqtt:start": "node ingest-mqtt.js",
+        "mqtt:node": "node node-subscriber.js"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.0.0",
+        "autoprefixer": "^10.4.22",
+        "axios": "^1.11.0",
+        "concurrently": "^9.0.1",
+        "daisyui": "^5.5.5",
+        "laravel-vite-plugin": "^2.0.0",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^4.1.17",
+        "vite": "^7.0.7"
+    },
+    "dependencies": {
+        "dotenv": "^16.4.7",
+        "mqtt": "^5.14.1",
+        "mysql2": "^3.15.3"
+    }
+}

@@ -1,0 +1,284 @@
+@extends('layouts.app')
+
+@section('content')
+<div class="w-full py-8 px-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+
+    <!-- Kebun A Card -->
+    <div class="bg-white shadow-md rounded-lg p-6 w-full max-w-full">
+        <h2 class="text-2xl font-bold text-[var(--color-text-main)]">Kebun A</h2>
+        <div class="text-gray-500 mb-4">Realtime Monitoring</div>
+        <div class="flex flex-row items-center justify-center gap-6 md:gap-12 lg:gap-24 mb-4 overflow-auto">
+            <div class="text-center px-1">
+                <div class="font-semibold text-[var(--color-primary)] text-sm sm:text-base whitespace-nowrap">pH Level</div>
+                <div id="kebun-a-ph" class="text-xl sm:text-3xl md:text-2xl font-bold text-[var(--color-primary)]">--</div>
+            </div>
+            <div class="text-center px-1">
+                <div class="font-semibold text-purple-600 text-sm sm:text-base whitespace-nowrap">TDS Level</div>
+                <div id="kebun-a-tds" class="text-xl sm:text-3xl md:text-2xl font-bold text-purple-600">--</div>
+            </div>
+            <div class="text-center px-1">
+                <div class="font-semibold text-blue-600 text-sm sm:text-base whitespace-nowrap">Suhu Air</div>
+                <div id="kebun-a-suhu" class="text-xl sm:text-3xl md:text-2xl font-bold text-blue-600">--</div>
+            </div>
+        </div>
+        <div class="h-64">
+            <canvas id="chartA" class="w-full h-full"></canvas>
+        </div>
+    </div>
+    <!-- Kebun B Card -->
+    <div class="bg-white shadow-md rounded-lg p-6 w-full md:w-[920px] max-w-full">
+        <h2 class="text-2xl font-bold text-[var(--color-text-main)]">Kebun B</h2>
+        <div class="text-gray-500 mb-4">Realtime Monitoring</div>
+        <div class="flex flex-row items-center justify-center gap-6 md:gap-16 lg:gap-24 mb-4 overflow-auto">
+            <div class="text-center px-1">
+                <div class="font-semibold text-[var(--color-primary)] text-sm sm:text-base whitespace-nowrap">pH Level</div>
+                <div id="kebun-b-ph" class="text-3xl sm:text-3xl md:text-2xl font-bold text-[var(--color-primary)]">--</div>
+            </div>
+            <div class="text-center px-1">
+                <div class="font-semibold text-purple-600 text-sm sm:text-base whitespace-nowrap">TDS Level</div>
+                <div id="kebun-b-tds" class="text-3xl sm:text-3xl md:text-2xl font-bold text-purple-600">--</div>
+            </div>
+            <div class="text-center px-1">
+                <div class="font-semibold text-blue-600 text-sm sm:text-base whitespace-nowrap">Suhu Air</div>
+                <div id="kebun-b-suhu" class="text-3xl sm:text-3xl md:text-2xl font-bold text-blue-600">--</div>
+            </div>
+        </div>
+        <div class="h-64">
+            <canvas id="chartB" class="w-full h-full"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// --- Chart setup (Chart.js) ----------------------------------------------
+const maxPoints = 15;
+
+function createChart(ctx) {
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'pH', data: [], borderColor: '#16a34a', backgroundColor: 'transparent', tension: 0.2, yAxisID: 'y-ph' },
+                { label: 'TDS', data: [], borderColor: '#a78bfa', backgroundColor: 'transparent', tension: 0.2, yAxisID: 'y-tds' },
+                { label: 'Suhu', data: [], borderColor: '#3b82f6', backgroundColor: 'transparent', tension: 0.2, yAxisID: 'y-suhu' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            stacked: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const v = context.parsed && context.parsed.y;
+                            if (label === 'TDS') {
+                                return label + ': ' + (v == null ? '' : Math.round(v));
+                            }
+                            return label + ': ' + (v == null ? '' : Number(v).toFixed(1));
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { display: true, title: { display: false } },
+                'y-ph': {
+                    type: 'linear',
+                    position: 'left',
+                    min: 0,
+                    max: 14,
+                    title: { display: true, text: 'pH' }
+                },
+                'y-tds': {
+                    type: 'linear',
+                    position: 'right',
+                    min: 0,
+                    max: 1200,
+                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: 'TDS (ppm)' }
+                },
+                'y-suhu': {
+                    type: 'linear',
+                    position: 'right',
+                    min: -10,
+                    max: 60,
+                    // hide the visual axis (ticks/labels/title) but keep the scale for plotting
+                    display: false,
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+const chartA = createChart(document.getElementById('chartA').getContext('2d'));
+const chartB = createChart(document.getElementById('chartB').getContext('2d'));
+
+function addPointToChart(chart, label, ph, tds, suhu) {
+    // Prevent duplicate if label matches last label
+    if (chart.data.labels.length > 0) {
+        const lastLabel = chart.data.labels[chart.data.labels.length - 1];
+        if (lastLabel === label) return;
+    }
+
+    chart.data.labels.push(label);
+    chart.data.datasets[0].data.push(toNumber(ph));
+    chart.data.datasets[1].data.push(toNumber(tds));
+    chart.data.datasets[2].data.push(toNumber(suhu));
+    // trim
+    if (chart.data.labels.length > maxPoints) {
+        chart.data.labels.shift();
+        chart.data.datasets.forEach(ds => ds.data.shift());
+    }
+    chart.update('none');
+}
+
+// Utility: parse a value into a number or return null
+function toNumber(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
+// Utility: format a numeric value to `decimals` places, or return '--' for null/undefined
+function formatNumber(v, decimals = 1) {
+    const n = toNumber(v);
+    return n === null ? '--' : n.toFixed(decimals);
+}
+
+function kebunToChart(kebun) {
+    if (!kebun) return null;
+    if (kebun === 'kebun-a') return chartA;
+    if (kebun === 'kebun-b') return chartB;
+    return null;
+}
+
+function updateChartFromPayload(kebun, payload) {
+    const chart = kebunToChart(kebun);
+    if (!chart) return;
+    const timestamp = new Date();
+    // if payload has date/time try to parse
+    if (payload.date && payload.time) {
+        const t = new Date(payload.date + ' ' + payload.time);
+        if (!isNaN(t)) timestamp.setTime(t.getTime());
+    }
+    const phVal = payload.ph != null ? Number(parseFloat(payload.ph).toFixed(1)) : null;
+    const tdsVal = payload.tds != null ? toNumber(payload.tds) : null;
+    const suhuVal = payload.suhu_air != null ? Number(parseFloat(payload.suhu_air).toFixed(1)) : null;
+    addPointToChart(chart, timestamp.toLocaleTimeString(), phVal, tdsVal, suhuVal);
+}
+
+// --- Poll latest telemetry and update DOM + charts ------------------------
+async function fetchHistory() {
+    try {
+        const res = await fetch('/api/telemetry/history');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        ['kebun-a', 'kebun-b'].forEach(kebun => {
+            if (data[kebun] && Array.isArray(data[kebun])) {
+                data[kebun].forEach(row => {
+                    const t = new Date(row.recorded_at);
+                    const label = t.toLocaleTimeString();
+                    const chart = kebunToChart(kebun);
+                    if (chart) {
+                         addPointToChart(chart, label, row.ph, row.tds, row.suhu_air);
+                    }
+                });
+            }
+        });
+    } catch (e) {
+        console.error('Failed to fetch history', e);
+    }
+}
+
+async function fetchTelemetry() {
+    try {
+        const res = await fetch('/api/telemetry/latest');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data['kebun-a']) {
+            const a = data['kebun-a'];
+            document.getElementById('kebun-a-ph').innerText = a.ph != null ? formatNumber(a.ph, 1) : '--';
+            document.getElementById('kebun-a-tds').innerText = a.tds ?? '--';
+            document.getElementById('kebun-a-suhu').innerText = a.suhu_air != null ? formatNumber(a.suhu_air, 1) : '--';
+            updateChartFromPayload('kebun-a', a);
+        }
+        if (data['kebun-b']) {
+            const b = data['kebun-b'];
+            document.getElementById('kebun-b-ph').innerText = b.ph != null ? formatNumber(b.ph, 1) : '--';
+            document.getElementById('kebun-b-tds').innerText = b.tds ?? '--';
+            document.getElementById('kebun-b-suhu').innerText = b.suhu_air != null ? formatNumber(b.suhu_air, 1) : '--';
+            updateChartFromPayload('kebun-b', b);
+        }
+    } catch (e) {
+        // ignore network errors
+    }
+}
+
+// Initial load
+fetchHistory().then(() => {
+    // start polling every 2s after history is loaded
+    setInterval(fetchTelemetry, 1000);
+    fetchTelemetry();
+});
+</script>
+<!-- MQTT over WebSocket (realtime) -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+// Try to connect via WebSocket to EMQX for realtime updates
+(() => {
+    const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://broker.emqx.io:8083/mqtt';
+    const clientId = 'web-client-' + Math.random().toString(16).substr(2, 8);
+    const opts = { keepalive: 30, clientId, reconnectPeriod: 2000 };
+
+    try {
+        const client = mqtt.connect(wsUrl, opts);
+
+        client.on('connect', () => {
+            console.info('MQTT.js connected to', wsUrl);
+            // subscribe to telemetry topics
+            client.subscribe('hidroganik/+/telemetry', { qos: 0 }, (err) => {
+                if (err) console.warn('subscribe error', err);
+            });
+        });
+
+        client.on('reconnect', () => console.info('MQTT.js reconnecting...'));
+        client.on('error', (err) => console.error('MQTT.js error', err));
+
+        client.on('message', (topic, message) => {
+            try {
+                const payload = JSON.parse(message.toString());
+                const parts = topic.split('/');
+                const kebun = parts[1]; // e.g. kebun-a
+
+                // map kebun to element ids (kebun-a -> kebun-a-ph etc)
+                const phEl = document.getElementById(`${kebun}-ph`);
+                const tdsEl = document.getElementById(`${kebun}-tds`);
+                const suhuEl = document.getElementById(`${kebun}-suhu`);
+
+                if (phEl) phEl.innerText = payload.ph != null ? formatNumber(payload.ph, 1) : phEl.innerText;
+                if (tdsEl) tdsEl.innerText = payload.tds != null ? payload.tds : tdsEl.innerText;
+                if (suhuEl) suhuEl.innerText = payload.suhu_air != null ? formatNumber(payload.suhu_air, 1) : suhuEl.innerText;
+
+                // update chart
+                if (typeof updateChartFromPayload === 'function') {
+                    updateChartFromPayload(kebun, payload);
+                }
+            } catch (e) {
+                console.error('Invalid MQTT message', e);
+            }
+        });
+    } catch (e) {
+        console.warn('MQTT WebSocket not available', e);
+    }
+})();
+</script>
+@include('components.footer')
+
+@endsection
