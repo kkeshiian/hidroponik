@@ -32,7 +32,7 @@ class LogController extends Controller
                 'avg_temp' => round((float) $query->avg('suhu'), 2),
             ];
 
-            $rows = $query->orderBy('recorded_at', 'desc')->limit(25)->get();
+            $rows = $query->orderBy('recorded_at', 'desc')->paginate(25);
 
             return view('log', compact('rows', 'stats'));
         } catch (\Illuminate\Database\QueryException $e) {
@@ -127,7 +127,13 @@ class LogController extends Controller
                 }
             }
             
-            $rows = $query->orderBy('recorded_at', 'desc')->limit(25)->get();
+            // Get page from request, default to 1
+            $page = (int) $request->input('page', 1);
+            $perPage = 25;
+            $skip = ($page - 1) * $perPage;
+            
+            $total = $query->count();
+            $rows = $query->orderBy('recorded_at', 'desc')->skip($skip)->take($perPage)->get();
             
             // Calculate stats on filtered data
             $statsQuery = Telemetry::query();
@@ -148,7 +154,19 @@ class LogController extends Controller
                 'avg_temp' => round((float) $statsQuery->avg('suhu'), 2),
             ];
 
-            return Response::json(['rows' => $rows, 'stats' => $stats]);
+            $lastPage = ceil($total / $perPage);
+            return Response::json([
+                'rows' => $rows, 
+                'stats' => $stats,
+                'pagination' => [
+                    'current_page' => $page,
+                    'last_page' => $lastPage,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'from' => $skip + 1,
+                    'to' => min($skip + $perPage, $total)
+                ]
+            ]);
         } catch (\Illuminate\Database\QueryException $e) {
             // return sample data
             $rows = [];
@@ -203,7 +221,6 @@ class LogController extends Controller
 
             try {
                 $query = Telemetry::query()->orderBy('recorded_at', 'desc');
-                $query->limit(1000);
                 $query->chunk(200, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
                         fputcsv($handle, [

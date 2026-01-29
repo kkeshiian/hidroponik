@@ -119,8 +119,37 @@
             </table>
         </div>
 
-        <div class="mt-6 flex items-center justify-between">
-            <div class="text-sm text-gray-500">Showing 1 to 25 of 254 entries</div>
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="text-sm text-gray-500" id="pagination-info">
+                Showing {{ $rows->firstItem() ?? 0 }} to {{ $rows->lastItem() ?? 0 }} of {{ $rows->total() ?? 0 }} entries
+            </div>
+            <div class="flex gap-2" id="pagination-buttons">
+                @if($rows->onFirstPage())
+                    <button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Previous</button>
+                @else
+                    <a href="{{ $rows->previousPageUrl() }}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Previous</a>
+                @endif
+                
+                <div class="flex gap-1">
+                    @foreach(range(1, min($rows->lastPage(), 5)) as $pageNum)
+                        @if($pageNum == $rows->currentPage())
+                            <span class="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold">{{ $pageNum }}</span>
+                        @else
+                            <a href="{{ $rows->url($pageNum) }}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">{{ $pageNum }}</a>
+                        @endif
+                    @endforeach
+                    @if($rows->lastPage() > 5)
+                        <span class="px-2 py-2 text-gray-500">...</span>
+                        <a href="{{ $rows->url($rows->lastPage()) }}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">{{ $rows->lastPage() }}</a>
+                    @endif
+                </div>
+                
+                @if($rows->hasMorePages())
+                    <a href="{{ $rows->nextPageUrl() }}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Next</a>
+                @else
+                    <button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Next</button>
+                @endif
+            </div>
         </div>
     </div>
 
@@ -130,6 +159,7 @@
 // Auto-refresh: poll /api/logs every 5 seconds with filters
 (() => {
     const intervalMs = 5000;
+    let currentPage = 1;
 
     function render(data) {
         // update stats
@@ -166,10 +196,61 @@
             html = `<tr><td colspan="6" class="py-4 text-center text-gray-500">No records</td></tr>`;
         }
         tbody.innerHTML = html;
+        
+        // Update pagination info
+        if (data.pagination) {
+            const paginationInfo = document.getElementById('pagination-info');
+            const paginationButtons = document.getElementById('pagination-buttons');
+            
+            if (paginationInfo) {
+                paginationInfo.textContent = `Showing ${data.pagination.from} to ${data.pagination.to} of ${data.pagination.total} entries`;
+            }
+            
+            if (paginationButtons) {
+                currentPage = data.pagination.current_page;
+                const lastPage = data.pagination.last_page;
+                
+                let buttonsHtml = '';
+                
+                // Previous button
+                if (currentPage === 1) {
+                    buttonsHtml += '<button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Previous</button>';
+                } else {
+                    buttonsHtml += `<button onclick="goToPage(${currentPage - 1})" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Previous</button>`;
+                }
+                
+                // Page numbers
+                buttonsHtml += '<div class="flex gap-1">';
+                const maxButtons = Math.min(lastPage, 5);
+                for (let i = 1; i <= maxButtons; i++) {
+                    if (i === currentPage) {
+                        buttonsHtml += `<span class="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold">${i}</span>`;
+                    } else {
+                        buttonsHtml += `<button onclick="goToPage(${i})" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">${i}</button>`;
+                    }
+                }
+                if (lastPage > 5) {
+                    buttonsHtml += '<span class="px-2 py-2 text-gray-500">...</span>';
+                    buttonsHtml += `<button onclick="goToPage(${lastPage})" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">${lastPage}</button>`;
+                }
+                buttonsHtml += '</div>';
+                
+                // Next button
+                if (currentPage === lastPage) {
+                    buttonsHtml += '<button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Next</button>';
+                } else {
+                    buttonsHtml += `<button onclick="goToPage(${currentPage + 1})" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Next</button>`;
+                }
+                
+                paginationButtons.innerHTML = buttonsHtml;
+            }
+        }
     }
 
-    async function fetchLogs() {
+    async function fetchLogs(page = null) {
         try {
+            if (page !== null) currentPage = page;
+            
             const startDate = document.getElementById('filter-start-date')?.value || '';
             const endDate = document.getElementById('filter-end-date')?.value || '';
             const device = document.getElementById('filter-device')?.value || '';
@@ -180,6 +261,7 @@
             if (endDate) params.append('to', endDate);
             if (device) params.append('kebun', device);
             if (interval) params.append('interval', interval);
+            params.append('page', currentPage);
             
             const url = '/api/logs' + (params.toString() ? '?' + params.toString() : '');
             const res = await fetch(url);
@@ -192,10 +274,15 @@
     }
 
     // Add change listeners to filters
-    document.getElementById('filter-start-date')?.addEventListener('change', fetchLogs);
-    document.getElementById('filter-end-date')?.addEventListener('change', fetchLogs);
-    document.getElementById('filter-device')?.addEventListener('change', fetchLogs);
-    document.getElementById('filter-interval')?.addEventListener('change', fetchLogs);
+    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
+    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
+    document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
+
+    // Function to go to specific page
+    window.goToPage = function(page) {
+        fetchLogs(page);
+    };
 
     // initial fetch and start auto-refresh
     fetchLogs();
