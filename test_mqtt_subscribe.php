@@ -18,8 +18,8 @@ try {
     echo "Connecting to MQTT broker...\n";
     $mqtt->connect($connectionSettings);
     
-    echo "Subscribing to topic: hidroganik/+/telemetry\n";
-    $mqtt->subscribe('hidroganik/+/telemetry', function ($topic, $message) {
+    echo "Subscribing to topic: hidroganik/+/publish\n";
+    $mqtt->subscribe('hidroganik/+/publish', function ($topic, $message) {
         echo "\n[RECEIVED] Topic: $topic\n";
         echo "Message: $message\n\n";
     }, 0);

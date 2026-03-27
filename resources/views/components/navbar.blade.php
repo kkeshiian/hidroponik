@@ -71,10 +71,10 @@
 
             <ul tabindex="0"
                 class="dropdown-content menu bg-white rounded-xl p-4 mt-2 w-48 shadow-none border border-gray-200">
-                <li><a href="{{ route('home') }}" class="{{ request()->routeIs('home') ? 'text-green-700 font-bold' : '' }}">Dashboard</a></li>
-                <li><a href="{{ route('log') }}" class="{{ request()->routeIs('log') ? 'text-green-700 font-bold' : '' }}">Log Data</a></li>
-                <li><a href="{{ url('/kalibrasi') }}" class="{{ request()->is('kalibrasi') ? 'text-green-700 font-bold' : '' }}">Kalibrasi</a></li>
-                <li><a href="{{ url('/pengaturan') }}" class="{{ request()->is('pengaturan') ? 'text-green-700 font-bold' : '' }}">Pengaturan</a></li>
+                <li><a href="{{ route('home') }}" class="{{ request()->routeIs('home') ? '!text-green-700 font-bold bg-green-50' : 'text-gray-700' }}">Dashboard</a></li>
+                <li><a href="{{ route('log') }}" class="{{ request()->routeIs('log*') ? '!text-green-700 font-bold bg-green-50' : 'text-gray-700' }}">Log Data</a></li>
+                <li><a href="{{ route('kalibrasi') }}" class="{{ request()->routeIs('kalibrasi*') || request()->is('kalibrasi*') ? '!text-green-700 font-bold bg-green-50' : 'text-gray-700' }}">Kalibrasi</a></li>
+                <li><a href="{{ url('/pengaturan') }}" class="{{ request()->is('pengaturan*') ? '!text-green-700 font-bold bg-green-50' : 'text-gray-700' }}">Pengaturan</a></li>
             </ul>
         </div>
     </div>

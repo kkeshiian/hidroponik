@@ -53,7 +53,7 @@ class MqttSubscribe extends Command
             return 1;
         }
 
-        $topicFilter = 'hidroganik/+/telemetry';
+        $topicFilter = 'hidroganik/+/publish';
         $this->info("Subscribing to topic filter: {$topicFilter}");
 
         $mqtt->subscribe($topicFilter, function (string $topic, string $message, int $qualityOfService, bool $retained) {
@@ -93,7 +93,7 @@ class MqttSubscribe extends Command
             return;
         }
 
-        // extract kebun name from topic (expected format: hidroganik/{kebun}/telemetry)
+        // extract kebun name from topic (expected format: hidroganik/{kebun}/publish)
         $parts = explode('/', $topic);
         $kebun = $parts[1] ?? null;
 
@@ -186,6 +186,7 @@ class MqttSubscribe extends Command
                 'cal_ph_asam' => $payload['cal_ph_asam'] ?? null,
                 'cal_tds_k' => $payload['cal_tds_k'] ?? null,
                 'tds_mentah' => $payload['tds_mentah'] ?? null,
+                'raw_payload' => $payload['raw'] ?? $payload,
                 'recorded_at' => $recordedAt,
             ]);
             Log::info('Telemetry saved', ['id' => $created->id ?? null]);

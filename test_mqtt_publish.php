@@ -19,18 +19,14 @@ try {
     $mqtt->connect($connectionSettings);
     
     $testData = [
-        'suhu_air' => 28.5,
-        'ph' => 6.8,
-        'tds' => 650,
-        'cal_ph_netral' => 7.0,
-        'cal_ph_asam' => 4.0,
-        'cal_tds_k' => 1.0,
-        'tds_mentah' => 650,
-        'date' => date('Y-m-d'),
-        'time' => date('H:i:s')
+        'suhu' => 27.50,
+        'ph' => 9.19,
+        'tds' => 2.57,
+        'phVolt' => 2.0790,
+        'tdsVolt' => 0.0063,
     ];
     
-    $topic = 'hidroganik/kebun-a/telemetry';
+    $topic = 'hidroganik/kebun-a/publish';
     $message = json_encode($testData);
     
     echo "Publishing to topic: $topic\n";
