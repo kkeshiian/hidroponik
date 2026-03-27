@@ -46,7 +46,7 @@ const CONFIG = {
     port: parseInt(process.env.MQTT_PORT || '1883', 10),
     username: process.env.MQTT_USERNAME || null,
     password: process.env.MQTT_PASSWORD || null,
-    topic: process.env.MQTT_TOPIC || 'hidroganik/+/data',
+    topic: process.env.MQTT_TOPIC || 'hidroganik/+/publish',
     clientId: `hidroponik_ingest_${Math.random().toString(16).slice(2, 10)}`,
     keepalive: 60,
     reconnectPeriod: 2000,
@@ -204,9 +204,9 @@ async function saveTelemetry(pool, payload) {
   const sql = `
     INSERT INTO telemetries (
       kebun, ph, tds, suhu, 
-      cal_ph_netral, cal_ph_asam, cal_tds_k, tds_mentah,
+      cal_ph_netral, cal_ph_asam, cal_tds_k, tds_mentah, raw_payload,
       recorded_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
   `;
   
   const params = [
@@ -218,6 +218,7 @@ async function saveTelemetry(pool, payload) {
     payload.cal_ph_asam ?? null,
     payload.cal_tds_k ?? null,
     payload.tds_mentah ?? null,
+    payload.raw_payload ?? null,
     payload.recorded_at ?? new Date(),
   ];
   
@@ -234,7 +235,7 @@ async function handleMessage(pool, client, topic, message) {
     // Parse JSON message
     const raw = JSON.parse(message.toString());
     
-    // Extract kebun from topic (hidroganik/[kebun]/data) or from message field
+    // Extract kebun from topic (hidroganik/[kebun]/publish) or from message field
     const topicParts = topic.split('/');
     const kebun = raw.perangkat || raw.kebun || topicParts[1] || 'unknown';
     
@@ -299,6 +300,7 @@ async function handleMessage(pool, client, topic, message) {
       cal_ph_asam: numOrNull(raw.cal_ph_asam),
       cal_tds_k: numOrNull(raw.cal_tds_k),
       tds_mentah: tdsRaw,
+      raw_payload: JSON.stringify(raw),
       recorded_at: recordedAt,
     };
     

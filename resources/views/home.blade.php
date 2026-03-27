@@ -78,7 +78,7 @@ function createChart(ctx) {
                             const label = context.dataset.label || '';
                             const v = context.parsed && context.parsed.y;
                             if (label === 'TDS') {
-                                return label + ': ' + (v == null ? '' : Math.round(v));
+                                return label + ': ' + (v == null ? '' : Math.trunc(v));
                             }
                             return label + ': ' + (v == null ? '' : Number(v).toFixed(1));
                         }
@@ -118,6 +118,11 @@ function createChart(ctx) {
 
 const chartA = createChart(document.getElementById('chartA').getContext('2d'));
 const chartB = createChart(document.getElementById('chartB').getContext('2d'));
+const lastRealtimeUpdate = {
+    'kebun-a': 0,
+    'kebun-b': 0,
+};
+const REALTIME_HOLD_MS = 15000;
 
 function addPointToChart(chart, label, ph, tds, suhu) {
     // Prevent duplicate if label matches last label
@@ -150,26 +155,57 @@ function formatNumber(v, decimals = 1) {
     return n === null ? '--' : n.toFixed(decimals);
 }
 
-function kebunToChart(kebun) {
+function formatTds(v) {
+    const n = toNumber(v);
+    return n === null ? '--' : String(Math.trunc(n));
+}
+
+function normalizeKebun(kebun) {
     if (!kebun) return null;
-    if (kebun === 'kebun-a') return chartA;
-    if (kebun === 'kebun-b') return chartB;
+    const key = String(kebun).toLowerCase();
+    if (key === 'kebun-1' || key === 'a') return 'kebun-a';
+    if (key === 'kebun-2' || key === 'b') return 'kebun-b';
+    return key;
+}
+
+function getSuhu(payload) {
+    if (!payload) return null;
+    return payload.suhu != null ? payload.suhu : payload.suhu_air;
+}
+
+function kebunToChart(kebun) {
+    const normalized = normalizeKebun(kebun);
+    if (!normalized) return null;
+    if (normalized === 'kebun-a') return chartA;
+    if (normalized === 'kebun-b') return chartB;
     return null;
 }
 
 function updateChartFromPayload(kebun, payload) {
-    const chart = kebunToChart(kebun);
+    const normalizedKebun = normalizeKebun(kebun);
+    const chart = kebunToChart(normalizedKebun);
     if (!chart) return;
     const timestamp = new Date();
-    // if payload has date/time try to parse
-    if (payload.date && payload.time) {
+    // Prefer recorded_at from API/DB payload to avoid adding duplicate points each poll.
+    if (payload.recorded_at) {
+        const t = new Date(payload.recorded_at);
+        if (!isNaN(t)) timestamp.setTime(t.getTime());
+    } else if (payload.date && payload.time) {
+        // if payload has date/time try to parse
         const t = new Date(payload.date + ' ' + payload.time);
         if (!isNaN(t)) timestamp.setTime(t.getTime());
     }
     const phVal = payload.ph != null ? Number(parseFloat(payload.ph).toFixed(1)) : null;
     const tdsVal = payload.tds != null ? toNumber(payload.tds) : null;
-    const suhuVal = payload.suhu_air != null ? Number(parseFloat(payload.suhu_air).toFixed(1)) : null;
+    const suhuRaw = getSuhu(payload);
+    const suhuVal = suhuRaw != null ? Number(parseFloat(suhuRaw).toFixed(1)) : null;
     addPointToChart(chart, timestamp.toLocaleTimeString(), phVal, tdsVal, suhuVal);
+}
+
+function hasFreshRealtime(kebun) {
+    const normalized = normalizeKebun(kebun);
+    if (!normalized) return false;
+    return (Date.now() - (lastRealtimeUpdate[normalized] || 0)) < REALTIME_HOLD_MS;
 }
 
 // --- Poll latest telemetry and update DOM + charts ------------------------
@@ -186,7 +222,7 @@ async function fetchHistory() {
                     const label = t.toLocaleTimeString();
                     const chart = kebunToChart(kebun);
                     if (chart) {
-                         addPointToChart(chart, label, row.ph, row.tds, row.suhu_air);
+                        addPointToChart(chart, label, row.ph, row.tds, getSuhu(row));
                     }
                 });
             }
@@ -204,17 +240,23 @@ async function fetchTelemetry() {
 
         if (data['kebun-a']) {
             const a = data['kebun-a'];
-            document.getElementById('kebun-a-ph').innerText = a.ph != null ? formatNumber(a.ph, 1) : '--';
-            document.getElementById('kebun-a-tds').innerText = a.tds ?? '--';
-            document.getElementById('kebun-a-suhu').innerText = a.suhu_air != null ? formatNumber(a.suhu_air, 1) : '--';
-            updateChartFromPayload('kebun-a', a);
+            if (!hasFreshRealtime('kebun-a')) {
+                document.getElementById('kebun-a-ph').innerText = a.ph != null ? formatNumber(a.ph, 1) : '--';
+                document.getElementById('kebun-a-tds').innerText = formatTds(a.tds);
+                const suhuA = getSuhu(a);
+                document.getElementById('kebun-a-suhu').innerText = suhuA != null ? formatNumber(suhuA, 1) : '--';
+                updateChartFromPayload('kebun-a', a);
+            }
         }
         if (data['kebun-b']) {
             const b = data['kebun-b'];
-            document.getElementById('kebun-b-ph').innerText = b.ph != null ? formatNumber(b.ph, 1) : '--';
-            document.getElementById('kebun-b-tds').innerText = b.tds ?? '--';
-            document.getElementById('kebun-b-suhu').innerText = b.suhu_air != null ? formatNumber(b.suhu_air, 1) : '--';
-            updateChartFromPayload('kebun-b', b);
+            if (!hasFreshRealtime('kebun-b')) {
+                document.getElementById('kebun-b-ph').innerText = b.ph != null ? formatNumber(b.ph, 1) : '--';
+                document.getElementById('kebun-b-tds').innerText = formatTds(b.tds);
+                const suhuB = getSuhu(b);
+                document.getElementById('kebun-b-suhu').innerText = suhuB != null ? formatNumber(suhuB, 1) : '--';
+                updateChartFromPayload('kebun-b', b);
+            }
         }
     } catch (e) {
         // ignore network errors
@@ -242,8 +284,8 @@ fetchHistory().then(() => {
 
         client.on('connect', () => {
             console.info('MQTT.js connected to', wsUrl);
-            // subscribe to telemetry topics
-            client.subscribe('hidroganik/+/telemetry', { qos: 0 }, (err) => {
+            // subscribe to publish topics
+            client.subscribe('hidroganik/+/publish', { qos: 0 }, (err) => {
                 if (err) console.warn('subscribe error', err);
             });
         });
@@ -255,7 +297,8 @@ fetchHistory().then(() => {
             try {
                 const payload = JSON.parse(message.toString());
                 const parts = topic.split('/');
-                const kebun = parts[1]; // e.g. kebun-a
+                const kebun = normalizeKebun(parts[1]);
+                if (!kebun) return;
 
                 // map kebun to element ids (kebun-a -> kebun-a-ph etc)
                 const phEl = document.getElementById(`${kebun}-ph`);
@@ -263,8 +306,10 @@ fetchHistory().then(() => {
                 const suhuEl = document.getElementById(`${kebun}-suhu`);
 
                 if (phEl) phEl.innerText = payload.ph != null ? formatNumber(payload.ph, 1) : phEl.innerText;
-                if (tdsEl) tdsEl.innerText = payload.tds != null ? payload.tds : tdsEl.innerText;
-                if (suhuEl) suhuEl.innerText = payload.suhu_air != null ? formatNumber(payload.suhu_air, 1) : suhuEl.innerText;
+                if (tdsEl) tdsEl.innerText = payload.tds != null ? formatTds(payload.tds) : tdsEl.innerText;
+                const suhuValue = getSuhu(payload);
+                if (suhuEl) suhuEl.innerText = suhuValue != null ? formatNumber(suhuValue, 1) : suhuEl.innerText;
+                lastRealtimeUpdate[kebun] = Date.now();
 
                 // update chart
                 if (typeof updateChartFromPayload === 'function') {

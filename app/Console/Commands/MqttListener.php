@@ -45,7 +45,7 @@ class MqttListener extends Command
         $clientId = 'hidroponik_listener_' . uniqid();
         $username = env('MQTT_USERNAME', null);
         $password = env('MQTT_PASSWORD', null);
-        $topic    = env('MQTT_TOPIC', 'hidroganik/+/telemetry');
+        $topic    = env('MQTT_TOPIC', 'hidroganik/+/publish');
 
         $this->info("MQTT Broker: $broker:$port");
         $this->info("MQTT Topic: $topic");
@@ -76,7 +76,7 @@ class MqttListener extends Command
             // Publish status online
             $mqtt->publish('hidroponik/listener/status', 'online', 1, true);
 
-            // Subscribe to telemetry topic
+            // Subscribe to publish topic
             $mqtt->subscribe($topic, function ($topic, $message) {
                 $this->handleMessage($topic, $message);
             }, 0);
@@ -149,7 +149,7 @@ class MqttListener extends Command
     private function saveToDatabase($data, $topic)
     {
         try {
-            // Extract kebun dari topic (hidroganik/[kebun]/telemetry)
+            // Extract kebun dari topic (hidroganik/[kebun]/publish)
             $topicParts = explode('/', $topic);
             $kebun = $topicParts[1] ?? 'unknown';
 
@@ -165,6 +165,7 @@ class MqttListener extends Command
                 'cal_ph_asam' => $calibration->ph_asam ?? null,
                 'cal_tds_k' => $calibration->tds_k ?? null,
                 'tds_mentah' => $data['tds_mentah'] ?? $data['tds_raw'] ?? null,
+                'raw_payload' => $data,
                 'recorded_at' => Carbon::now(),
             ]);
 

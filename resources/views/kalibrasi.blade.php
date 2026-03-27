@@ -1,580 +1,522 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    $kebunCards = [
+        ['key' => 'kebun-a', 'label' => 'Kebun A', 'device' => 'kebun-1'],
+        ['key' => 'kebun-b', 'label' => 'Kebun B', 'device' => 'kebun-2'],
+    ];
+@endphp
+
 <div class="w-full py-8 px-6">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        <!-- KEBUN A CARD -->
-        <div class="bg-white shadow-md rounded-lg p-6 w-full max-w-full">
-            <h2 class="text-2xl font-bold text-[var(--color-text-main)] mb-2">Kebun A</h2>
-            <div class="text-gray-500 mb-6">Kalibrasi & Live Preview</div>
-            
-            <!-- Live Data Preview - Enhanced Design -->
-            <div class="grid grid-cols-2 gap-3 mb-6">
-                <!-- TDS Card -->
-                <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                            </svg>
+        @foreach ($kebunCards as $card)
+            <div class="bg-white shadow-md rounded-lg p-6 w-full max-w-full" data-kebun-card="{{ $card['key'] }}">
+                <h2 class="text-2xl font-bold text-[var(--color-text-main)] mb-2">{{ $card['label'] }}</h2>
+                <div class="text-gray-500 mb-6">Kalibrasi MQTT + Live Preview</div>
+
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                    <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                </svg>
+                            </div>
+                            <div class="text-xs font-medium text-green-700 uppercase">TDS Level</div>
                         </div>
-                        <div class="text-xs font-medium text-green-700 uppercase">TDS Level</div>
+                        <div class="space-y-2">
+                            <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
+                                <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
+                                <div id="{{ $card['key'] }}-tds-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="space-y-2">
-                        <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
-                            <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
-                            <div id="kebun-a-tds-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
+
+                    <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <div class="text-xs font-medium text-green-700 uppercase">Suhu Air</div>
                         </div>
-                        <div class="bg-white/50 rounded-lg p-2 border border-green-100">
-                            <div class="text-xs text-green-600 mb-1">Data Mentah</div>
-                            <div id="kebun-a-tds-mentah" class="text-xl sm:text-2xl font-bold text-green-600">--</div>
+                        <div class="space-y-2">
+                            <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
+                                <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
+                                <div id="{{ $card['key'] }}-suhu-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Suhu Card -->
-                <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                        </div>
-                        <div class="text-xs font-medium text-green-700 uppercase">Suhu Air</div>
-                    </div>
-                    <div class="space-y-2">
-                        <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
-                            <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
-                            <div id="kebun-a-suhu-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
-                        </div>
-                        <div class="bg-white/50 rounded-lg p-2 border border-green-100">
-                            <div class="text-xs text-green-600 mb-1">Data Mentah</div>
-                            <div id="kebun-a-suhu-mentah" class="text-xl sm:text-2xl font-bold text-green-600">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Calibration Settings - 2 Columns Layout -->
-            <div class="grid grid-cols-2 gap-2.5">
-                <!-- TDS Calibration -->
-                <div class="border border-green-200 rounded-lg p-2.5 bg-green-50">
-                    <h4 class="font-semibold text-green-700 mb-2 flex items-center gap-1 text-xs">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                        </svg>
-                        Kalibrasi TDS
-                    </h4>
-                    
-                    <div class="mb-2">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Multiplier</label>
-                        <input type="number" step="0.0001" id="tds-mult-a" value="{{ $settings['kebun-a']->tds_multiplier ?? 1.0 }}"
-                               class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
-                        <div class="text-xs text-gray-500 mt-0.5" style="font-size: 10px;">Formula: TDS × Multiplier</div>
+                <div class="space-y-3">
+                    <div class="bg-slate-100 border border-slate-200 rounded-lg p-3">
+                        <div class="text-xs font-semibold text-slate-700 mb-1">Status MQTT</div>
+                        <div id="status-{{ $card['key'] }}" class="text-sm text-slate-600">Menunggu koneksi MQTT...</div>
+                        <div id="countdown-{{ $card['key'] }}" class="text-xs text-amber-700 mt-1 hidden"></div>
                     </div>
 
-                    <div class="bg-white rounded p-2 mb-2">
-                        <div class="text-xs font-medium text-gray-600 mb-1">Test</div>
-                        <div class="flex gap-1 items-stretch">
-                            <input type="number" id="tds-raw-a" placeholder="Raw"
-                                   class="flex-1 min-w-0 border border-gray-300 rounded px-1.5 py-1 text-xs text-gray-900 placeholder-gray-400" style="font-size: 11px;">
-                            <button onclick="testTDS('kebun-a')" 
-                                    class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap flex-shrink-0">
-                                Test
-                            </button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="border border-green-200 rounded-lg p-3 bg-green-50">
+                            <h4 class="font-semibold text-green-700 mb-2 text-xs">Kalibrasi pH</h4>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="startPh401('{{ $card['key'] }}')"
+                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded transition shadow-sm text-xs">
+                                    pH 4.01
+                                </button>
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="startPh686('{{ $card['key'] }}')"
+                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded transition shadow-sm text-xs">
+                                    pH 6.86
+                                </button>
+                            </div>
+                            <div class="mt-2 rounded-md border border-green-200 bg-white/60 px-2 py-1.5 text-[11px] text-gray-700">
+                                pH 4.01 = <span id="{{ $card['key'] }}-ph401-volt" class="font-semibold text-green-700">--</span> V <br>
+                                pH 6.86 = <span id="{{ $card['key'] }}-ph686-volt" class="font-semibold text-green-700">--</span> V
+                            </div>
+                            <div class="text-[11px] text-gray-600 mt-2">Setiap kalibrasi pH menunggu stabilisasi 15 detik di ESP32.</div>
                         </div>
-                        <div id="tds-result-a" class="text-xs text-gray-600 mt-1 break-words" style="font-size: 10px;"></div>
-                    </div>
 
-                    <button onclick="saveTDS('kebun-a')" 
-                            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition shadow-sm text-xs">
-                        Simpan
-                    </button>
-                </div>
+                        <div class="border border-green-200 rounded-lg p-3 bg-green-50">
+                            <h4 class="font-semibold text-green-700 mb-2 text-xs">Kalibrasi TDS (ppm)</h4>
+                            <div class="flex gap-2">
+                                <input type="number" min="1" step="1" id="tds-ppm-{{ $card['key'] }}"
+                                    class="w-full border border-gray-300 rounded px-2 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                    placeholder="Contoh: 500">
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="submitTds('{{ $card['key'] }}')"
+                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold px-3 rounded transition shadow-sm text-xs">
+                                    Kirim
+                                </button>
+                            </div>
+                            <div class="text-[11px] text-gray-600 mt-2">Command: <span class="font-mono">TDS:&lt;angka&gt;</span></div>
+                        </div>
 
-                <!-- Suhu Calibration -->
-                <div class="border border-green-200 rounded-lg p-2.5 bg-green-50">
-                    <h4 class="font-semibold text-green-700 mb-2 flex items-center gap-1 text-xs">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                        Kalibrasi Suhu
-                    </h4>
-                    
-                    <div class="mb-2">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Correction</label>
-                        <input type="number" step="0.01" id="suhu-corr-a" value="{{ $settings['kebun-a']->suhu_correction ?? 0.0 }}"
-                               class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
-                        <div class="text-xs text-gray-500 mt-0.5" style="font-size: 10px;">Formula: Suhu + Correction</div>
-                    </div>
+                        <div class="border border-green-200 rounded-lg p-3 bg-green-50">
+                            <h4 class="font-semibold text-green-700 mb-2 text-xs">Offset Suhu</h4>
+                            <div class="mb-2 rounded-md border border-green-200 bg-white/60 px-2 py-1.5 text-[11px] text-gray-700">
+                                Suhu = <span id="{{ $card['key'] }}-offset-suhu" class="font-semibold text-green-700">--</span> °C <br>
+                                Suhu Mentah = <span id="{{ $card['key'] }}-offset-suhu-raw" class="font-semibold text-green-700">--</span> °C
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="number" step="0.1" id="temp-offset-{{ $card['key'] }}"
+                                    class="w-full border border-gray-300 rounded px-2 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                    placeholder="Contoh: 1.5 atau -1">
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="submitTempOffset('{{ $card['key'] }}')"
+                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold px-3 rounded transition shadow-sm text-xs">
+                                    Kirim
+                                </button>
+                            </div>
+                            <div class="text-[11px] text-gray-600 mt-2">Command: <span class="font-mono">TEMP_OFFSET:&lt;angka&gt;</span></div>
+                        </div>
 
-                    <div class="bg-white rounded p-2 mb-2">
-                        <div class="text-xs font-medium text-gray-600 mb-1">Test</div>
-                        <div class="flex gap-1 items-stretch">
-                            <input type="number" step="0.01" id="suhu-raw-a" placeholder="Raw"
-                                   class="flex-1 min-w-0 border border-gray-300 rounded px-1.5 py-1 text-xs text-gray-900 placeholder-gray-400" style="font-size: 11px;">
-                            <button onclick="testSuhu('kebun-a')" 
-                                    class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap flex-shrink-0">
-                                Test
-                            </button>
-                        </div>
-                        <div id="suhu-result-a" class="text-xs text-gray-600 mt-1 break-words" style="font-size: 10px;"></div>
-                    </div>
-
-                    <button onclick="saveSuhu('kebun-a')" 
-                            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition shadow-sm text-xs">
-                        Simpan
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- KEBUN B CARD -->
-        <div class="bg-white shadow-md rounded-lg p-6 w-full max-w-full">
-            <h2 class="text-2xl font-bold text-[var(--color-text-main)] mb-2">Kebun B</h2>
-            <div class="text-gray-500 mb-6">Kalibrasi & Live Preview</div>
-            
-            <!-- Live Data Preview - Enhanced Design -->
-            <div class="grid grid-cols-2 gap-3 mb-6">
-                <!-- TDS Card -->
-                <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                            </svg>
-                        </div>
-                        <div class="text-xs font-medium text-green-700 uppercase">TDS Level</div>
-                    </div>
-                    <div class="space-y-2">
-                        <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
-                            <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
-                            <div id="kebun-b-tds-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
-                        </div>
-                        <div class="bg-white/50 rounded-lg p-2 border border-green-100">
-                            <div class="text-xs text-green-600 mb-1">Data Mentah</div>
-                            <div id="kebun-b-tds-mentah" class="text-xl sm:text-2xl font-bold text-green-600">--</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Suhu Card -->
-                <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 sm:p-4 border border-green-200 shadow-sm">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                        </div>
-                        <div class="text-xs font-medium text-green-700 uppercase">Suhu Air</div>
-                    </div>
-                    <div class="space-y-2">
-                        <div class="bg-white/70 backdrop-blur rounded-lg p-2 sm:p-3 border border-green-200/50">
-                            <div class="text-xs text-green-700 font-medium mb-1">Terkalibrasi</div>
-                            <div id="kebun-b-suhu-kalibrasi" class="text-xl sm:text-2xl font-bold text-green-700">--</div>
-                        </div>
-                        <div class="bg-white/50 rounded-lg p-2 border border-green-100">
-                            <div class="text-xs text-green-600 mb-1">Data Mentah</div>
-                            <div id="kebun-b-suhu-mentah" class="text-xl sm:text-2xl font-bold text-green-600">--</div>
+                        <div class="border border-green-200 rounded-lg p-3 bg-green-50">
+                            <h4 class="font-semibold text-green-700 mb-2 text-xs">Command Tambahan</h4>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="sendQuickCommand('{{ $card['key'] }}', 'SAVE_CAL')"
+                                    class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded transition text-xs">
+                                    SAVE
+                                </button>
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="sendQuickCommand('{{ $card['key'] }}', 'LOAD_CAL')"
+                                    class="bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2 rounded transition text-xs">
+                                    LOAD
+                                </button>
+                                <button type="button" data-kebun-action="{{ $card['key'] }}" onclick="sendQuickCommand('{{ $card['key'] }}', 'RESET_CAL')"
+                                    class="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2 rounded transition text-xs">
+                                    RESET
+                                </button>
+                            </div>
+                            <div class="text-[11px] text-gray-600 mt-2">Command dikirim sebagai string ke topic command.</div>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Calibration Settings - 2 Columns Layout -->
-            <div class="grid grid-cols-2 gap-2.5">
-                <!-- TDS Calibration -->
-                <div class="border border-green-200 rounded-lg p-2.5 bg-green-50">
-                    <h4 class="font-semibold text-green-700 mb-2 flex items-center gap-1 text-xs">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                        </svg>
-                        Kalibrasi TDS
-                    </h4>
-                    
-                    <div class="mb-2">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Multiplier</label>
-                        <input type="number" step="0.0001" id="tds-mult-b" value="{{ $settings['kebun-b']->tds_multiplier ?? 1.0 }}"
-                               class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
-                        <div class="text-xs text-gray-500 mt-0.5" style="font-size: 10px;">Formula: TDS × Multiplier</div>
-                    </div>
-
-                    <div class="bg-white rounded p-2 mb-2">
-                        <div class="text-xs font-medium text-gray-600 mb-1">Test</div>
-                        <div class="flex gap-1 items-stretch">
-                            <input type="number" id="tds-raw-b" placeholder="Raw"
-                                   class="flex-1 min-w-0 border border-gray-300 rounded px-1.5 py-1 text-xs text-gray-900 placeholder-gray-400" style="font-size: 11px;">
-                            <button onclick="testTDS('kebun-b')" 
-                                    class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap flex-shrink-0">
-                                Test
-                            </button>
-                        </div>
-                        <div id="tds-result-b" class="text-xs text-gray-600 mt-1 break-words" style="font-size: 10px;"></div>
-                    </div>
-
-                    <button onclick="saveTDS('kebun-b')" 
-                            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition shadow-sm text-xs">
-                        Simpan
-                    </button>
-                </div>
-
-                <!-- Suhu Calibration -->
-                <div class="border border-green-200 rounded-lg p-2.5 bg-green-50">
-                    <h4 class="font-semibold text-green-700 mb-2 flex items-center gap-1 text-xs">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                        Kalibrasi Suhu
-                    </h4>
-                    
-                    <div class="mb-2">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Correction</label>
-                        <input type="number" step="0.01" id="suhu-corr-b" value="{{ $settings['kebun-b']->suhu_correction ?? 0.0 }}"
-                               class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
-                        <div class="text-xs text-gray-500 mt-0.5" style="font-size: 10px;">Formula: Suhu + Correction</div>
-                    </div>
-
-                    <div class="bg-white rounded p-2 mb-2">
-                        <div class="text-xs font-medium text-gray-600 mb-1">Test</div>
-                        <div class="flex gap-1 items-stretch">
-                            <input type="number" step="0.01" id="suhu-raw-b" placeholder="Raw"
-                                   class="flex-1 min-w-0 border border-gray-300 rounded px-1.5 py-1 text-xs text-gray-900 placeholder-gray-400" style="font-size: 11px;">
-                            <button onclick="testSuhu('kebun-b')" 
-                                    class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap flex-shrink-0">
-                                Test
-                            </button>
-                        </div>
-                        <div id="suhu-result-b" class="text-xs text-gray-600 mt-1 break-words" style="font-size: 10px;"></div>
-                    </div>
-
-                    <button onclick="saveSuhu('kebun-b')" 
-                            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-1.5 rounded transition shadow-sm text-xs">
-                        Simpan
-                    </button>
-                </div>
-            </div>
-        </div>
+        @endforeach
     </div>
 </div>
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-// MQTT Client for Kalibrasi page - subscribe to PREVIEW topic with raw data
 const mqttBroker = 'ws://broker.emqx.io:8083/mqtt';
+const kebunConfig = {
+    'kebun-a': { device: 'kebun-1', label: 'Kebun A' },
+    'kebun-b': { device: 'kebun-2', label: 'Kebun B' },
+};
+
+const deviceToUi = {
+    'kebun-1': 'kebun-a',
+    'kebun-2': 'kebun-b',
+    'kebun-a': 'kebun-a',
+    'kebun-b': 'kebun-b',
+};
+
+const statusOkMap = {
+    PH401_START: ['ph401_saved'],
+    PH686_START: ['ph686_saved'],
+    TDS: ['tds_calibration_done'],
+    TEMP_OFFSET: ['temp_offset_updated'],
+};
+
+const statusFailMap = {
+    TDS: ['tds_calibration_failed_invalid_input', 'tds_calibration_failed_raw_zero'],
+};
+
+const state = {
+    'kebun-a': { busy: false, waiting: null, timeoutId: null, countdownId: null },
+    'kebun-b': { busy: false, waiting: null, timeoutId: null, countdownId: null },
+};
+
 let mqttClient = null;
 
+function normalizeKebun(value) {
+    if (!value) return null;
+    return deviceToUi[String(value).toLowerCase()] || null;
+}
+
+function statusEl(kebun) {
+    return document.getElementById(`status-${kebun}`);
+}
+
+function countdownEl(kebun) {
+    return document.getElementById(`countdown-${kebun}`);
+}
+
+function setStatus(kebun, text, isError = false) {
+    const el = statusEl(kebun);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('text-slate-600', 'text-green-700', 'text-red-600');
+    el.classList.add(isError ? 'text-red-600' : 'text-green-700');
+}
+
+function setBusy(kebun, busy) {
+    state[kebun].busy = busy;
+    const controls = document.querySelectorAll(`[data-kebun-action="${kebun}"]`);
+    controls.forEach((el) => {
+        el.disabled = busy;
+        el.classList.toggle('opacity-60', busy);
+        el.classList.toggle('cursor-not-allowed', busy);
+    });
+
+    const tdsInput = document.getElementById(`tds-ppm-${kebun}`);
+    const tempInput = document.getElementById(`temp-offset-${kebun}`);
+    if (tdsInput) tdsInput.disabled = busy;
+    if (tempInput) tempInput.disabled = busy;
+}
+
+function clearWaiting(kebun) {
+    const current = state[kebun];
+    current.waiting = null;
+
+    if (current.timeoutId) {
+        clearTimeout(current.timeoutId);
+        current.timeoutId = null;
+    }
+
+    if (current.countdownId) {
+        clearInterval(current.countdownId);
+        current.countdownId = null;
+    }
+
+    const countdown = countdownEl(kebun);
+    if (countdown) {
+        countdown.classList.add('hidden');
+        countdown.textContent = '';
+    }
+
+    setBusy(kebun, false);
+}
+
+function runCountdown(kebun, seconds) {
+    const countdown = countdownEl(kebun);
+    if (!countdown) return;
+
+    let remaining = seconds;
+    countdown.classList.remove('hidden');
+    countdown.textContent = `Countdown pH: ${remaining} detik`;
+
+    if (state[kebun].countdownId) {
+        clearInterval(state[kebun].countdownId);
+    }
+
+    state[kebun].countdownId = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+            countdown.textContent = 'Countdown selesai, menunggu status simpan...';
+            clearInterval(state[kebun].countdownId);
+            state[kebun].countdownId = null;
+            return;
+        }
+        countdown.textContent = `Countdown pH: ${remaining} detik`;
+    }, 1000);
+}
+
+function getStatusValue(payload) {
+    if (typeof payload === 'string') {
+        return payload.trim();
+    }
+
+    if (payload && typeof payload === 'object') {
+        if (typeof payload.status === 'string') return payload.status.trim();
+        if (typeof payload.message === 'string') return payload.message.trim();
+    }
+
+    return '';
+}
+
+function showInfoAlert(title, text, icon = 'info') {
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({ icon, title, text, confirmButtonColor: '#16a34a' });
+    } else {
+        alert(`${title}: ${text}`);
+    }
+}
+
+function publishCommand(kebun, command, options = {}) {
+    if (!mqttClient || !mqttClient.connected) {
+        showInfoAlert('MQTT Belum Terkoneksi', 'Periksa koneksi broker dan coba lagi.', 'error');
+        return;
+    }
+
+    if (state[kebun].busy) {
+        showInfoAlert('Proses Berjalan', `${kebunConfig[kebun].label} masih menjalankan command sebelumnya.`, 'warning');
+        return;
+    }
+
+    const device = kebunConfig[kebun].device;
+    const topic = `hidroganik/${device}/command`;
+    const waitFor = (options.waitFor || []).map((s) => s.toLowerCase());
+    const failFor = (options.failFor || []).map((s) => s.toLowerCase());
+    const timeoutMs = options.timeoutMs || 30000;
+
+    setBusy(kebun, true);
+    setStatus(kebun, `Mengirim command: ${command}`);
+
+    state[kebun].waiting = {
+        command,
+        waitFor,
+        failFor,
+    };
+
+    if (options.countdown === true) {
+        runCountdown(kebun, 15);
+    }
+
+    mqttClient.publish(topic, command, { qos: 0 }, (err) => {
+        if (err) {
+            clearWaiting(kebun);
+            setStatus(kebun, `Gagal publish command: ${err.message}`, true);
+            return;
+        }
+
+        if (!waitFor.length && !failFor.length) {
+            setTimeout(() => {
+                clearWaiting(kebun);
+                setStatus(kebun, `Command terkirim: ${command}`);
+            }, 800);
+            return;
+        }
+
+        state[kebun].timeoutId = setTimeout(() => {
+            clearWaiting(kebun);
+            setStatus(kebun, 'Timeout: status belum diterima dari ESP32.', true);
+        }, timeoutMs);
+    });
+}
+
+function processStatus(topicKebun, payload) {
+    const kebun = normalizeKebun(topicKebun) || normalizeKebun(payload.kebun || payload.perangkat);
+    if (!kebun || !state[kebun]) return;
+
+    const status = getStatusValue(payload);
+    if (!status) return;
+
+    setStatus(kebun, `Status: ${status}`);
+
+    const waiting = state[kebun].waiting;
+    if (!waiting) return;
+
+    const statusLc = status.toLowerCase();
+    if (waiting.waitFor.includes(statusLc)) {
+        clearWaiting(kebun);
+        showInfoAlert('Kalibrasi Berhasil', `${kebunConfig[kebun].label}: ${status}`, 'success');
+        return;
+    }
+
+    if (waiting.failFor.includes(statusLc)) {
+        clearWaiting(kebun);
+        showInfoAlert('Kalibrasi Gagal', `${kebunConfig[kebun].label}: ${status}`, 'error');
+    }
+}
+
+function updatePreview(kebunFromTopic, data) {
+    const kebun = normalizeKebun(kebunFromTopic);
+    if (!kebun) return;
+
+    const tds = data.tds;
+    const suhu = data.suhu_air ?? data.suhu;
+    const suhuMentah = data.suhu_mentah ?? data.suhuRaw ?? data.suhu_raw;
+    const phVolt401 = data.phAcidVoltage ?? data.ph_acid_voltage;
+    const phVolt686 = data.phNeutralVoltage ?? data.ph_neutral_voltage;
+
+    const tdsCalEl = document.getElementById(`${kebun}-tds-kalibrasi`);
+    const suhuCalEl = document.getElementById(`${kebun}-suhu-kalibrasi`);
+    const suhuOffsetEl = document.getElementById(`${kebun}-offset-suhu`);
+    const suhuOffsetRawEl = document.getElementById(`${kebun}-offset-suhu-raw`);
+    const ph401VoltEl = document.getElementById(`${kebun}-ph401-volt`);
+    const ph686VoltEl = document.getElementById(`${kebun}-ph686-volt`);
+
+    if (tds !== null && tds !== undefined && tdsCalEl) {
+        tdsCalEl.textContent = `${Math.round(Number(tds))} ppm`;
+    }
+    if (suhu !== null && suhu !== undefined && suhuCalEl) {
+        suhuCalEl.textContent = `${Number(suhu).toFixed(1)} °C`;
+    }
+    if (suhu !== null && suhu !== undefined && suhuOffsetEl) {
+        suhuOffsetEl.textContent = Number(suhu).toFixed(1);
+    }
+    if (suhuMentah !== null && suhuMentah !== undefined && suhuOffsetRawEl) {
+        suhuOffsetRawEl.textContent = Number(suhuMentah).toFixed(1);
+    }
+    if (phVolt401 !== null && phVolt401 !== undefined && ph401VoltEl) {
+        ph401VoltEl.textContent = Number(phVolt401).toFixed(4);
+    }
+    if (phVolt686 !== null && phVolt686 !== undefined && ph686VoltEl) {
+        ph686VoltEl.textContent = Number(phVolt686).toFixed(4);
+    }
+}
+
 function connectMQTT() {
-    try {
-        mqttClient = mqtt.connect(mqttBroker, {
-            clientId: 'hidroponik_kalibrasi_' + Math.random().toString(16).substr(2, 8),
-            clean: true,
-            reconnectPeriod: 2000,
-            keepalive: 60,
+    mqttClient = mqtt.connect(mqttBroker, {
+        clientId: 'hidroponik_kalibrasi_' + Math.random().toString(16).slice(2, 10),
+        clean: true,
+        reconnectPeriod: 2000,
+        keepalive: 60,
+    });
+
+    mqttClient.on('connect', () => {
+        Object.keys(kebunConfig).forEach((kebun) => {
+            setStatus(kebun, 'MQTT terhubung. Siap mengirim command.');
         });
 
-        mqttClient.on('connect', () => {
-            console.log('[Kalibrasi] MQTT Connected');
-            // Subscribe to PREVIEW topic - ini sudah include data mentah dan terkalibrasi
-            mqttClient.subscribe('hidroganik/+/preview', (err) => {
-                if (err) console.error('[Kalibrasi] Subscribe preview error:', err);
-                else console.log('[Kalibrasi] Subscribed to hidroganik/+/preview');
-            });
-        });
-
-        mqttClient.on('message', (topic, message) => {
-            try {
-                const data = JSON.parse(message.toString());
-                const parts = topic.split('/');
-                const kebun = parts[1];
-                
-                console.log('[Kalibrasi] Received preview data:', kebun, data);
-                
-                if (kebun === 'kebun-a') {
-                    updateKebunA(data);
-                } else if (kebun === 'kebun-b') {
-                    updateKebunB(data);
-                }
-            } catch (e) {
-                console.error('[Kalibrasi] Parse error:', e);
+        mqttClient.subscribe('hidroganik/+/preview', (err) => {
+            if (err) {
+                Object.keys(kebunConfig).forEach((kebun) => {
+                    setStatus(kebun, 'Gagal subscribe preview topic.', true);
+                });
             }
         });
 
-        mqttClient.on('error', (err) => {
-            console.error('[Kalibrasi] MQTT error:', err);
+        mqttClient.subscribe('hidroganik/+/publish', (err) => {
+            if (err) {
+                Object.keys(kebunConfig).forEach((kebun) => {
+                    setStatus(kebun, 'Gagal subscribe publish topic.', true);
+                });
+            }
         });
-    } catch (e) {
-        console.error('[Kalibrasi] MQTT init failed:', e);
-    }
+
+        mqttClient.subscribe('hidroganik/+/status', (err) => {
+            if (err) {
+                Object.keys(kebunConfig).forEach((kebun) => {
+                    setStatus(kebun, 'Gagal subscribe status topic.', true);
+                });
+            }
+        });
+    });
+
+    mqttClient.on('message', (topic, message) => {
+        const parts = topic.split('/');
+        const topicKebun = parts[1] || null;
+        const kind = parts[2] || '';
+
+        if (kind === 'preview' || kind === 'publish') {
+            try {
+                const data = JSON.parse(message.toString());
+                updatePreview(topicKebun, data);
+            } catch (error) {
+                console.error('[Kalibrasi] Preview parse error:', error);
+            }
+            return;
+        }
+
+        if (kind === 'status') {
+            const raw = message.toString().trim();
+            let payload = raw;
+            try {
+                payload = JSON.parse(raw);
+            } catch (_) {
+                // Status valid juga dalam bentuk string, jadi parse error diabaikan.
+            }
+            processStatus(topicKebun, payload);
+        }
+    });
+
+    mqttClient.on('error', (error) => {
+        Object.keys(kebunConfig).forEach((kebun) => {
+            setStatus(kebun, `MQTT error: ${error.message}`, true);
+        });
+    });
+
+    mqttClient.on('offline', () => {
+        Object.keys(kebunConfig).forEach((kebun) => {
+            setStatus(kebun, 'MQTT offline, menunggu reconnect...', true);
+        });
+    });
 }
 
-function updateKebunA(data) {
-    // TDS Terkalibrasi
-    if (data.tds !== null && data.tds !== undefined) {
-        document.getElementById('kebun-a-tds-kalibrasi').textContent = Math.round(data.tds) + ' ppm';
-    }
-    
-    // Suhu Terkalibrasi
-    if (data.suhu_air !== null && data.suhu_air !== undefined) {
-        document.getElementById('kebun-a-suhu-kalibrasi').textContent = data.suhu_air.toFixed(1) + ' °C';
-    }
-    
-    // TDS Mentah - langsung dari MQTT preview
-    if (data.tds_mentah !== null && data.tds_mentah !== undefined) {
-        document.getElementById('kebun-a-tds-mentah').textContent = Math.round(data.tds_mentah) + ' ppm';
-    }
-    
-    // Suhu Mentah - langsung dari MQTT preview
-    if (data.suhu_mentah !== null && data.suhu_mentah !== undefined) {
-        document.getElementById('kebun-a-suhu-mentah').textContent = Number(data.suhu_mentah).toFixed(1) + ' °C';
-    }
+function startPh401(kebun) {
+    publishCommand(kebun, 'PH401_START', {
+        waitFor: statusOkMap.PH401_START,
+        countdown: true,
+        timeoutMs: 35000,
+    });
 }
 
-function updateKebunB(data) {
-    // TDS Terkalibrasi
-    if (data.tds !== null && data.tds !== undefined) {
-        document.getElementById('kebun-b-tds-kalibrasi').textContent = Math.round(data.tds) + ' ppm';
-    }
-    
-    // Suhu Terkalibrasi
-    if (data.suhu_air !== null && data.suhu_air !== undefined) {
-        document.getElementById('kebun-b-suhu-kalibrasi').textContent = data.suhu_air.toFixed(1) + ' °C';
-    }
-    
-    // TDS Mentah - langsung dari MQTT preview
-    if (data.tds_mentah !== null && data.tds_mentah !== undefined) {
-        document.getElementById('kebun-b-tds-mentah').textContent = Math.round(data.tds_mentah) + ' ppm';
-    }
-    
-    // Suhu Mentah - langsung dari MQTT preview
-    if (data.suhu_mentah !== null && data.suhu_mentah !== undefined) {
-        document.getElementById('kebun-b-suhu-mentah').textContent = Number(data.suhu_mentah).toFixed(1) + ' °C';
-    }
+function startPh686(kebun) {
+    publishCommand(kebun, 'PH686_START', {
+        waitFor: statusOkMap.PH686_START,
+        countdown: true,
+        timeoutMs: 35000,
+    });
 }
 
-// Connect on page load
+function submitTds(kebun) {
+    const input = document.getElementById(`tds-ppm-${kebun}`);
+    const value = Number(input.value);
+
+    if (!Number.isFinite(value) || value <= 0) {
+        showInfoAlert('Input Tidak Valid', 'Masukkan nilai TDS referensi (ppm) lebih dari 0.', 'warning');
+        return;
+    }
+
+    publishCommand(kebun, `TDS:${Math.round(value)}`, {
+        waitFor: statusOkMap.TDS,
+        failFor: statusFailMap.TDS,
+        timeoutMs: 20000,
+    });
+}
+
+function submitTempOffset(kebun) {
+    const input = document.getElementById(`temp-offset-${kebun}`);
+    const value = Number(input.value);
+
+    if (!Number.isFinite(value)) {
+        showInfoAlert('Input Tidak Valid', 'Masukkan offset suhu yang valid (contoh 1.5 atau -1).', 'warning');
+        return;
+    }
+
+    publishCommand(kebun, `TEMP_OFFSET:${value}`, {
+        waitFor: statusOkMap.TEMP_OFFSET,
+        timeoutMs: 20000,
+    });
+}
+
+function sendQuickCommand(kebun, command) {
+    publishCommand(kebun, command, {
+        timeoutMs: 12000,
+    });
+}
+
 connectMQTT();
-
-// Test TDS calibration
-function testTDS(kebun) {
-    const mult = parseFloat(document.getElementById('tds-mult-' + kebun.split('-')[1]).value);
-    const raw = parseFloat(document.getElementById('tds-raw-' + kebun.split('-')[1]).value);
-    
-    if (isNaN(mult) || isNaN(raw)) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Input Tidak Valid',
-            text: 'Masukkan nilai yang valid',
-            confirmButtonColor: '#16a34a'
-        });
-        return;
-    }
-    
-    fetch(`/kalibrasi/${kebun}/test`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: JSON.stringify({
-            tds_raw: raw,
-            tds_multiplier: mult,
-            suhu_correction: 0
-        })
-    })
-    .then(res => {
-        if (!res.ok) throw new Error('Gagal melakukan test');
-        return res.json();
-    })
-    .then(data => {
-        const resultDiv = document.getElementById('tds-result-' + kebun.split('-')[1]);
-        resultDiv.innerHTML = `<strong>Hasil:</strong> ${raw} × ${mult} = <span class="text-green-600 font-bold">${data.tds_calibrated} ppm</span>`;
-    })
-    .catch(err => {
-        Swal.fire({
-            icon: 'error',
-            title: 'Test Gagal',
-            text: err.message,
-            confirmButtonColor: '#16a34a'
-        });
-    });
-}
-
-// Test Suhu calibration
-function testSuhu(kebun) {
-    const corr = parseFloat(document.getElementById('suhu-corr-' + kebun.split('-')[1]).value);
-    const raw = parseFloat(document.getElementById('suhu-raw-' + kebun.split('-')[1]).value);
-    
-    if (isNaN(corr) || isNaN(raw)) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Input Tidak Valid',
-            text: 'Masukkan nilai yang valid',
-            confirmButtonColor: '#16a34a'
-        });
-        return;
-    }
-    
-    fetch(`/kalibrasi/${kebun}/test`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: JSON.stringify({
-            suhu_raw: raw,
-            tds_multiplier: 1,
-            suhu_correction: corr
-        })
-    })
-    .then(res => {
-        if (!res.ok) throw new Error('Gagal melakukan test');
-        return res.json();
-    })
-    .then(data => {
-        const resultDiv = document.getElementById('suhu-result-' + kebun.split('-')[1]);
-        resultDiv.innerHTML = `<strong>Hasil:</strong> ${raw} + ${corr} = <span class="text-green-600 font-bold">${data.suhu_calibrated} °C</span>`;
-    })
-    .catch(err => {
-        Swal.fire({
-            icon: 'error',
-            title: 'Test Gagal',
-            text: err.message,
-            confirmButtonColor: '#16a34a'
-        });
-    });
-}
-
-// Save TDS calibration
-async function saveTDS(kebun) {
-    const mult = parseFloat(document.getElementById('tds-mult-' + kebun.split('-')[1]).value);
-    
-    if (isNaN(mult)) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Input Tidak Valid',
-            text: 'Masukkan nilai yang valid',
-            confirmButtonColor: '#16a34a'
-        });
-        return;
-    }
-    
-    const result = await Swal.fire({
-        icon: 'question',
-        title: 'Simpan Kalibrasi TDS?',
-        text: 'Pengaturan kalibrasi akan disimpan',
-        showCancelButton: true,
-        confirmButtonText: 'Simpan',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#6b7280'
-    });
-    
-    if (!result.isConfirmed) return;
-    
-    fetch(`/kalibrasi/${kebun}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: JSON.stringify({
-            tds_multiplier: mult
-        })
-    })
-    .then(async (res) => {
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-            const text = await res.text();
-            throw new Error('Unexpected response: ' + text.slice(0, 100));
-        }
-        return res.json();
-    })
-    .then(data => {
-        Swal.fire({
-            icon: 'success',
-            title: 'Berhasil!',
-            text: 'Kalibrasi TDS berhasil disimpan',
-            confirmButtonColor: '#16a34a'
-        }).then(() => {
-            location.reload();
-        });
-    })
-    .catch(err => {
-        Swal.fire({
-            icon: 'error',
-            title: 'Simpan Gagal',
-            text: err.message,
-            confirmButtonColor: '#16a34a'
-        });
-    });
-}
-
-// Save Suhu calibration
-async function saveSuhu(kebun) {
-    const corr = parseFloat(document.getElementById('suhu-corr-' + kebun.split('-')[1]).value);
-    
-    if (isNaN(corr)) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Input Tidak Valid',
-            text: 'Masukkan nilai yang valid',
-            confirmButtonColor: '#16a34a'
-        });
-        return;
-    }
-    
-    const result = await Swal.fire({
-        icon: 'question',
-        title: 'Simpan Kalibrasi Suhu?',
-        text: 'Pengaturan kalibrasi akan disimpan',
-        showCancelButton: true,
-        confirmButtonText: 'Simpan',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#6b7280'
-    });
-    
-    if (!result.isConfirmed) return;
-    
-    fetch(`/kalibrasi/${kebun}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: JSON.stringify({
-            suhu_correction: corr
-        })
-    })
-    .then(async (res) => {
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-            const text = await res.text();
-            throw new Error('Unexpected response: ' + text.slice(0, 100));
-        }
-        return res.json();
-    })
-    .then(data => {
-        Swal.fire({
-            icon: 'success',
-            title: 'Berhasil!',
-            text: 'Kalibrasi Suhu berhasil disimpan',
-            confirmButtonColor: '#16a34a'
-        }).then(() => {
-            location.reload();
-        });
-    })
-    .catch(err => {
-        Swal.fire({
-            icon: 'error',
-            title: 'Simpan Gagal',
-            text: err.message,
-            confirmButtonColor: '#16a34a'
-        });
-    });
-}
 </script>
 @endsection

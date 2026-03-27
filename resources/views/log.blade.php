@@ -12,14 +12,14 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Mulai</label>
                     <input type="date" id="filter-start-date"
-                           value="{{ date('Y-m-d') }}"
+                              value="{{ date('Y-m-d', strtotime('-90 days')) }}"
                            class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all" style="color-scheme: light;">
                 </div>
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Akhir</label>
                     <input type="date" id="filter-end-date"
-                           value="{{ date('Y-m-d', strtotime('+14 days')) }}"
+                              value="{{ date('Y-m-d') }}"
                            class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all" style="color-scheme: light;">
                 </div>
                 
@@ -28,7 +28,9 @@
                     <select id="filter-device" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white">
                         <option value="">Semua Perangkat</option>
                         <option value="kebun-a">Kebun A</option>
+                        <option value="kebun-1">Kebun 1 (alias Kebun A)</option>
                         <option value="kebun-b">Kebun B</option>
+                        <option value="kebun-2">Kebun 2 (alias Kebun B)</option>
                     </select>
                 </div>
                 

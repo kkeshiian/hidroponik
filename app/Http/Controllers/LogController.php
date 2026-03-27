@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Telemetry;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -11,17 +12,59 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
+    private function normalizedDate(?string $value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        try {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                return Carbon::createFromFormat('Y-m-d', $value)->format('Y-m-d');
+            }
+
+            if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+                return Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            }
+
+            return Carbon::parse($value)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function kebunAliases(?string $kebun): array
+    {
+        $value = strtolower(trim((string) $kebun));
+
+        if ($value === 'kebun-a' || $value === 'kebun-1' || $value === 'a') {
+            return ['kebun-a', 'kebun-1', 'a'];
+        }
+
+        if ($value === 'kebun-b' || $value === 'kebun-2' || $value === 'b') {
+            return ['kebun-b', 'kebun-2', 'b'];
+        }
+
+        return [$kebun];
+    }
+
     public function index(Request $request)
     {
         try {
             $query = Telemetry::query();
 
+            $fromDate = $this->normalizedDate($request->input('from'));
+            $toDate = $this->normalizedDate($request->input('to'));
+
             // filters (optional)
             if ($request->filled('kebun')) {
-                $query->where('kebun', $request->input('kebun'));
+                $query->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
             }
-            if ($request->filled('from') && $request->filled('to')) {
-                $query->whereBetween('recorded_at', [$request->input('from'), $request->input('to')]);
+            if ($fromDate) {
+                $query->where('recorded_at', '>=', $fromDate . ' 00:00:00');
+            }
+            if ($toDate) {
+                $query->where('recorded_at', '<=', $toDate . ' 23:59:59');
             }
 
             $total = (int) $query->count();
@@ -61,16 +104,18 @@ class LogController extends Controller
     {
         try {
             $query = Telemetry::query();
+            $fromDate = $this->normalizedDate($request->input('from'));
+            $toDate = $this->normalizedDate($request->input('to'));
             
             // Apply filters
             if ($request->filled('kebun')) {
-                $query->where('kebun', $request->input('kebun'));
+                $query->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
             }
-            if ($request->filled('from')) {
-                $query->where('recorded_at', '>=', $request->input('from') . ' 00:00:00');
+            if ($fromDate) {
+                $query->where('recorded_at', '>=', $fromDate . ' 00:00:00');
             }
-            if ($request->filled('to')) {
-                $query->where('recorded_at', '<=', $request->input('to') . ' 23:59:59');
+            if ($toDate) {
+                $query->where('recorded_at', '<=', $toDate . ' 23:59:59');
             }
             
             // Apply interval sampling
@@ -138,13 +183,13 @@ class LogController extends Controller
             // Calculate stats on filtered data
             $statsQuery = Telemetry::query();
             if ($request->filled('kebun')) {
-                $statsQuery->where('kebun', $request->input('kebun'));
+                $statsQuery->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
             }
-            if ($request->filled('from')) {
-                $statsQuery->where('recorded_at', '>=', $request->input('from') . ' 00:00:00');
+            if ($fromDate) {
+                $statsQuery->where('recorded_at', '>=', $fromDate . ' 00:00:00');
             }
-            if ($request->filled('to')) {
-                $statsQuery->where('recorded_at', '<=', $request->input('to') . ' 23:59:59');
+            if ($toDate) {
+                $statsQuery->where('recorded_at', '<=', $toDate . ' 23:59:59');
             }
             
             $stats = [

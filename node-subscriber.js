@@ -23,7 +23,7 @@ const DB_CONFIG = {
 // MQTT config
 const MQTT_URL = process.env.MQTT_URL || 'mqtt://broker.emqx.io:1883';
 const MQTT_CLIENT_ID = 'node-subscriber-' + Math.random().toString(16).slice(2);
-const MQTT_SUB_FILTER = process.env.MQTT_SUB_FILTER || 'hidroganik/+/telemetry';
+const MQTT_SUB_FILTER = process.env.MQTT_SUB_FILTER || 'hidroganik/+/publish';
 
 // Load save interval setting
 let currentInterval = 'realtime';
@@ -112,8 +112,8 @@ async function main() {
   }
 
   async function saveTelemetry(payload) {
-    const sql = `INSERT INTO telemetries (kebun, ph, tds, suhu, cal_ph_netral, cal_ph_asam, cal_tds_k, tds_mentah, recorded_at, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+    const sql = `INSERT INTO telemetries (kebun, ph, tds, suhu, cal_ph_netral, cal_ph_asam, cal_tds_k, tds_mentah, raw_payload, recorded_at, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
     const params = [
       payload.kebun ?? null,
       payload.ph ?? null,
@@ -123,6 +123,7 @@ async function main() {
       payload.cal_ph_asam ?? null,
       payload.cal_tds_k ?? null,
       payload.tds_mentah ?? null,
+      payload.raw_payload ?? null,
       payload.recorded_at ?? new Date(),
     ];
     await pool.execute(sql, params);
@@ -196,6 +197,7 @@ async function main() {
         cal_ph_asam: numOrNull(raw.cal_ph_asam),
         cal_tds_k: numOrNull(raw.cal_tds_k),
         tds_mentah: tdsRaw, // keep raw for reference
+        raw_payload: JSON.stringify(raw),
         recorded_at: recordedAt,
       };
 
