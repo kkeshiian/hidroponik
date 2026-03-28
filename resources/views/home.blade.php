@@ -275,10 +275,11 @@ fetchHistory().then(() => {
 <script>
 // Try to connect via WebSocket to EMQX for realtime updates
 (() => {
-    const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://broker.emqx.io:8084/mqtt';
+    const wsUrl = 'wss://broker.emqx.io:8084/mqtt';
     const clientId = 'web-client-' + Math.random().toString(16).substr(2, 8);
     const opts = { keepalive: 30, clientId, reconnectPeriod: 2000 };
 
+    
     try {
         const client = mqtt.connect(wsUrl, opts);
 
