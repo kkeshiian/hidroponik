@@ -137,7 +137,7 @@
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-const mqttBroker = 'ws://broker.emqx.io:8083/mqtt';
+const mqttBroker = 'wss://broker.emqx.io:8084/mqtt';
 const kebunConfig = {
     'kebun-a': { device: 'kebun-1', label: 'Kebun A' },
     'kebun-b': { device: 'kebun-2', label: 'Kebun B' },
