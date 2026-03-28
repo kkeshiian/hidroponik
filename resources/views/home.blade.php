@@ -279,6 +279,7 @@ fetchHistory().then(() => {
     const clientId = 'web-client-' + Math.random().toString(16).substr(2, 8);
     const opts = { keepalive: 30, clientId, reconnectPeriod: 2000 };
 
+    
     try {
         const client = mqtt.connect(wsUrl, opts);
 
