@@ -55,6 +55,20 @@
                     <div class="bg-slate-100 border border-slate-200 rounded-lg p-3">
                         <div class="text-xs font-semibold text-slate-700 mb-1">Status MQTT</div>
                         <div id="status-{{ $card['key'] }}" class="text-sm text-slate-600">Menunggu koneksi MQTT...</div>
+                        <div class="mt-2 flex items-center gap-2">
+                            <div class="text-xs font-semibold text-slate-700">Mode:</div>
+                            <div id="mode-{{ $card['key'] }}" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">UNKNOWN</div>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-2">
+                            <button type="button" data-kebun-mode="{{ $card['key'] }}" onclick="setModeCal('{{ $card['key'] }}')"
+                                class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 rounded transition text-xs">
+                                MODE_CAL
+                            </button>
+                            <button type="button" data-kebun-mode="{{ $card['key'] }}" onclick="setModeAuto('{{ $card['key'] }}')"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded transition text-xs">
+                                MODE_AUTO
+                            </button>
+                        </div>
                         <div id="countdown-{{ $card['key'] }}" class="text-xs text-amber-700 mt-1 hidden"></div>
                     </div>
 
@@ -155,6 +169,8 @@ const statusOkMap = {
     PH686_START: ['ph686_saved'],
     TDS: ['tds_calibration_done'],
     TEMP_OFFSET: ['temp_offset_updated'],
+    MODE_CAL: ['mode_cal_active', 'mode_changed:mode_cal', 'mode_set:mode_cal', 'mode_cal'],
+    MODE_AUTO: ['mode_auto_active', 'mode_changed:mode_auto', 'mode_set:mode_auto', 'mode_auto'],
 };
 
 const statusFailMap = {
@@ -162,8 +178,8 @@ const statusFailMap = {
 };
 
 const state = {
-    'kebun-a': { busy: false, waiting: null, timeoutId: null, countdownId: null },
-    'kebun-b': { busy: false, waiting: null, timeoutId: null, countdownId: null },
+    'kebun-a': { busy: false, waiting: null, timeoutId: null, countdownId: null, mode: 'unknown' },
+    'kebun-b': { busy: false, waiting: null, timeoutId: null, countdownId: null, mode: 'unknown' },
 };
 
 let mqttClient = null;
@@ -181,6 +197,34 @@ function countdownEl(kebun) {
     return document.getElementById(`countdown-${kebun}`);
 }
 
+function modeEl(kebun) {
+    return document.getElementById(`mode-${kebun}`);
+}
+
+function setMode(kebun, mode) {
+    if (!state[kebun]) return;
+    const normalized = String(mode || '').toLowerCase();
+    state[kebun].mode = normalized || 'unknown';
+
+    const el = modeEl(kebun);
+    if (!el) return;
+
+    if (normalized === 'mode_cal') {
+        el.textContent = 'MODE_CAL';
+        el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        return;
+    }
+
+    if (normalized === 'mode_auto') {
+        el.textContent = 'MODE_AUTO';
+        el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+        return;
+    }
+
+    el.textContent = 'UNKNOWN';
+    el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700';
+}
+
 function setStatus(kebun, text, isError = false) {
     const el = statusEl(kebun);
     if (!el) return;
@@ -193,6 +237,13 @@ function setBusy(kebun, busy) {
     state[kebun].busy = busy;
     const controls = document.querySelectorAll(`[data-kebun-action="${kebun}"]`);
     controls.forEach((el) => {
+        el.disabled = busy;
+        el.classList.toggle('opacity-60', busy);
+        el.classList.toggle('cursor-not-allowed', busy);
+    });
+
+    const modeControls = document.querySelectorAll(`[data-kebun-mode="${kebun}"]`);
+    modeControls.forEach((el) => {
         el.disabled = busy;
         el.classList.toggle('opacity-60', busy);
         el.classList.toggle('cursor-not-allowed', busy);
@@ -264,6 +315,42 @@ function getStatusValue(payload) {
     return '';
 }
 
+function parseModeFromAny(payloadOrStatus) {
+    if (payloadOrStatus && typeof payloadOrStatus === 'object') {
+        const rawMode = payloadOrStatus.mode || payloadOrStatus.device_mode || payloadOrStatus.current_mode;
+        if (typeof rawMode === 'string') {
+            const modeLc = rawMode.trim().toLowerCase();
+            if (modeLc === 'mode_cal' || modeLc === 'cal' || modeLc === 'calibration') return 'mode_cal';
+            if (modeLc === 'mode_auto' || modeLc === 'auto') return 'mode_auto';
+        }
+    }
+
+    const text = String(payloadOrStatus || '').trim().toLowerCase();
+    if (!text) return null;
+
+    if (
+        text.includes('mode_cal') ||
+        text.includes('mode cal') ||
+        text.includes('calibration mode') ||
+        text.includes('mode_changed:mode_cal') ||
+        text.includes('mode_set:mode_cal')
+    ) {
+        return 'mode_cal';
+    }
+
+    if (
+        text.includes('mode_auto') ||
+        text.includes('mode auto') ||
+        text.includes('normal mode') ||
+        text.includes('mode_changed:mode_auto') ||
+        text.includes('mode_set:mode_auto')
+    ) {
+        return 'mode_auto';
+    }
+
+    return null;
+}
+
 function showInfoAlert(title, text, icon = 'info') {
     if (typeof Swal !== 'undefined') {
         Swal.fire({ icon, title, text, confirmButtonColor: '#16a34a' });
@@ -296,6 +383,7 @@ function publishCommand(kebun, command, options = {}) {
         command,
         waitFor,
         failFor,
+        onSuccess: options.onSuccess,
     };
 
     if (options.countdown === true) {
@@ -324,12 +412,49 @@ function publishCommand(kebun, command, options = {}) {
     });
 }
 
+function ensureCalMode(kebun, actionLabel) {
+    if (!state[kebun]) return false;
+    if (state[kebun].mode === 'mode_cal') return true;
+
+    showInfoAlert(
+        'Mode Belum Sesuai',
+        `${kebunConfig[kebun].label}: ${actionLabel} hanya bisa dijalankan di MODE_CAL. Ubah mode dulu.`,
+        'warning'
+    );
+    return false;
+}
+
+function setModeCal(kebun) {
+    publishCommand(kebun, 'MODE_CAL', {
+        waitFor: statusOkMap.MODE_CAL,
+        timeoutMs: 15000,
+        onSuccess: () => {
+            setMode(kebun, 'mode_cal');
+        },
+    });
+}
+
+function setModeAuto(kebun) {
+    publishCommand(kebun, 'MODE_AUTO', {
+        waitFor: statusOkMap.MODE_AUTO,
+        timeoutMs: 15000,
+        onSuccess: () => {
+            setMode(kebun, 'mode_auto');
+        },
+    });
+}
+
 function processStatus(topicKebun, payload) {
     const kebun = normalizeKebun(topicKebun) || normalizeKebun(payload.kebun || payload.perangkat);
     if (!kebun || !state[kebun]) return;
 
     const status = getStatusValue(payload);
     if (!status) return;
+
+    const modeFromStatus = parseModeFromAny(payload) || parseModeFromAny(status);
+    if (modeFromStatus) {
+        setMode(kebun, modeFromStatus);
+    }
 
     setStatus(kebun, `Status: ${status}`);
 
@@ -338,8 +463,12 @@ function processStatus(topicKebun, payload) {
 
     const statusLc = status.toLowerCase();
     if (waiting.waitFor.includes(statusLc)) {
+        if (typeof waiting.onSuccess === 'function') {
+            waiting.onSuccess();
+        }
         clearWaiting(kebun);
-        showInfoAlert('Kalibrasi Berhasil', `${kebunConfig[kebun].label}: ${status}`, 'success');
+        const successTitle = waiting.command.startsWith('MODE_') ? 'Mode Berhasil Diubah' : 'Kalibrasi Berhasil';
+        showInfoAlert(successTitle, `${kebunConfig[kebun].label}: ${status}`, 'success');
         return;
     }
 
@@ -352,6 +481,11 @@ function processStatus(topicKebun, payload) {
 function updatePreview(kebunFromTopic, data) {
     const kebun = normalizeKebun(kebunFromTopic);
     if (!kebun) return;
+
+    const modeFromPayload = parseModeFromAny(data);
+    if (modeFromPayload) {
+        setMode(kebun, modeFromPayload);
+    }
 
     const tds = data.tds;
     const suhu = data.suhu_air ?? data.suhu;
@@ -465,6 +599,7 @@ function connectMQTT() {
 }
 
 function startPh401(kebun) {
+    if (!ensureCalMode(kebun, 'Kalibrasi pH 4.01')) return;
     publishCommand(kebun, 'PH401_START', {
         waitFor: statusOkMap.PH401_START,
         countdown: true,
@@ -473,6 +608,7 @@ function startPh401(kebun) {
 }
 
 function startPh686(kebun) {
+    if (!ensureCalMode(kebun, 'Kalibrasi pH 6.86')) return;
     publishCommand(kebun, 'PH686_START', {
         waitFor: statusOkMap.PH686_START,
         countdown: true,
@@ -481,6 +617,7 @@ function startPh686(kebun) {
 }
 
 function submitTds(kebun) {
+    if (!ensureCalMode(kebun, 'Kalibrasi TDS')) return;
     const input = document.getElementById(`tds-ppm-${kebun}`);
     const value = Number(input.value);
 
@@ -497,6 +634,7 @@ function submitTds(kebun) {
 }
 
 function submitTempOffset(kebun) {
+    if (!ensureCalMode(kebun, 'Set offset suhu')) return;
     const input = document.getElementById(`temp-offset-${kebun}`);
     const value = Number(input.value);
 
@@ -512,6 +650,7 @@ function submitTempOffset(kebun) {
 }
 
 function sendQuickCommand(kebun, command) {
+    if (!ensureCalMode(kebun, `Command ${command}`)) return;
     publishCommand(kebun, command, {
         timeoutMs: 12000,
     });
