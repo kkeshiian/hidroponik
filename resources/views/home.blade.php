@@ -6,7 +6,11 @@
     <!-- Kebun A Card -->
     <div class="bg-white shadow-md rounded-lg p-6 w-full max-w-full">
         <h2 class="text-2xl font-bold text-[var(--color-text-main)]">Kebun A</h2>
-        <div class="text-gray-500 mb-4">Realtime Monitoring</div>
+        <div class="text-gray-500 mb-2">Realtime Monitoring</div>
+        <div class="mb-4 flex items-center gap-2">
+            <div class="text-xs font-semibold text-slate-600">Mode:</div>
+            <div id="kebun-a-mode" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">UNKNOWN</div>
+        </div>
         <div class="flex flex-row items-center justify-center gap-6 md:gap-12 lg:gap-24 mb-4 overflow-auto">
             <div class="text-center px-1">
                 <div class="font-semibold text-[var(--color-primary)] text-sm sm:text-base whitespace-nowrap">pH Level</div>
@@ -28,7 +32,11 @@
     <!-- Kebun B Card -->
     <div class="bg-white shadow-md rounded-lg p-6 w-full md:w-[920px] max-w-full">
         <h2 class="text-2xl font-bold text-[var(--color-text-main)]">Kebun B</h2>
-        <div class="text-gray-500 mb-4">Realtime Monitoring</div>
+        <div class="text-gray-500 mb-2">Realtime Monitoring</div>
+        <div class="mb-4 flex items-center gap-2">
+            <div class="text-xs font-semibold text-slate-600">Mode:</div>
+            <div id="kebun-b-mode" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">UNKNOWN</div>
+        </div>
         <div class="flex flex-row items-center justify-center gap-6 md:gap-16 lg:gap-24 mb-4 overflow-auto">
             <div class="text-center px-1">
                 <div class="font-semibold text-[var(--color-primary)] text-sm sm:text-base whitespace-nowrap">pH Level</div>
@@ -160,6 +168,45 @@ function formatTds(v) {
     return n === null ? '--' : String(Math.trunc(n));
 }
 
+function parseModeFromAny(payloadOrStatus) {
+    if (payloadOrStatus && typeof payloadOrStatus === 'object') {
+        const rawMode = payloadOrStatus.mode || payloadOrStatus.device_mode || payloadOrStatus.current_mode;
+        if (typeof rawMode === 'string') {
+            const modeLc = rawMode.trim().toLowerCase();
+            if (modeLc === 'mode_cal' || modeLc === 'cal' || modeLc === 'calibration') return 'mode_cal';
+            if (modeLc === 'mode_auto' || modeLc === 'auto') return 'mode_auto';
+        }
+    }
+
+    const text = String(payloadOrStatus || '').trim().toLowerCase();
+    if (!text) return null;
+    if (text.includes('mode_cal') || text.includes('mode cal') || text.includes('mode_changed:mode_cal') || text.includes('mode_set:mode_cal')) return 'mode_cal';
+    if (text.includes('mode_auto') || text.includes('mode auto') || text.includes('mode_changed:mode_auto') || text.includes('mode_set:mode_auto')) return 'mode_auto';
+    return null;
+}
+
+function setHomeMode(kebun, mode) {
+    const normalized = normalizeKebun(kebun);
+    if (!normalized) return;
+    const el = document.getElementById(`${normalized}-mode`);
+    if (!el) return;
+
+    if (mode === 'mode_cal') {
+        el.textContent = 'MODE_CAL';
+        el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        return;
+    }
+
+    if (mode === 'mode_auto') {
+        el.textContent = 'MODE_AUTO';
+        el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+        return;
+    }
+
+    el.textContent = 'UNKNOWN';
+    el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700';
+}
+
 function normalizeKebun(kebun) {
     if (!kebun) return null;
     const key = String(kebun).toLowerCase();
@@ -240,6 +287,8 @@ async function fetchTelemetry() {
 
         if (data['kebun-a']) {
             const a = data['kebun-a'];
+            const modeA = parseModeFromAny(a);
+            if (modeA) setHomeMode('kebun-a', modeA);
             if (!hasFreshRealtime('kebun-a')) {
                 document.getElementById('kebun-a-ph').innerText = a.ph != null ? formatNumber(a.ph, 1) : '--';
                 document.getElementById('kebun-a-tds').innerText = formatTds(a.tds);
@@ -250,6 +299,8 @@ async function fetchTelemetry() {
         }
         if (data['kebun-b']) {
             const b = data['kebun-b'];
+            const modeB = parseModeFromAny(b);
+            if (modeB) setHomeMode('kebun-b', modeB);
             if (!hasFreshRealtime('kebun-b')) {
                 document.getElementById('kebun-b-ph').innerText = b.ph != null ? formatNumber(b.ph, 1) : '--';
                 document.getElementById('kebun-b-tds').innerText = formatTds(b.tds);
@@ -289,6 +340,9 @@ fetchHistory().then(() => {
             client.subscribe('hidroganik/+/publish', { qos: 0 }, (err) => {
                 if (err) console.warn('subscribe error', err);
             });
+            client.subscribe('hidroganik/+/status', { qos: 0 }, (err) => {
+                if (err) console.warn('subscribe error', err);
+            });
         });
 
         client.on('reconnect', () => console.info('MQTT.js reconnecting...'));
@@ -296,10 +350,28 @@ fetchHistory().then(() => {
 
         client.on('message', (topic, message) => {
             try {
-                const payload = JSON.parse(message.toString());
                 const parts = topic.split('/');
                 const kebun = normalizeKebun(parts[1]);
                 if (!kebun) return;
+                const kind = parts[2] || '';
+
+                if (kind === 'status') {
+                    const raw = message.toString().trim();
+                    let statusPayload = raw;
+                    try {
+                        statusPayload = JSON.parse(raw);
+                    } catch (_) {
+                        // string status masih valid
+                    }
+
+                    const modeFromStatus = parseModeFromAny(statusPayload);
+                    if (modeFromStatus) {
+                        setHomeMode(kebun, modeFromStatus);
+                    }
+                    return;
+                }
+
+                const payload = JSON.parse(message.toString());
 
                 // map kebun to element ids (kebun-a -> kebun-a-ph etc)
                 const phEl = document.getElementById(`${kebun}-ph`);
@@ -310,6 +382,10 @@ fetchHistory().then(() => {
                 if (tdsEl) tdsEl.innerText = payload.tds != null ? formatTds(payload.tds) : tdsEl.innerText;
                 const suhuValue = getSuhu(payload);
                 if (suhuEl) suhuEl.innerText = suhuValue != null ? formatNumber(suhuValue, 1) : suhuEl.innerText;
+                const modeFromPayload = parseModeFromAny(payload);
+                if (modeFromPayload) {
+                    setHomeMode(kebun, modeFromPayload);
+                }
                 lastRealtimeUpdate[kebun] = Date.now();
 
                 // update chart
