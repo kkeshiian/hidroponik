@@ -155,6 +155,36 @@
         </div>
     </div>
 
+    <div class="bg-white rounded-lg p-6 shadow-sm mt-8">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+            <div>
+                <h3 class="text-xl font-semibold text-gray-800">Power Consumption</h3>
+                <div class="text-sm text-gray-500">Riwayat realtime estimasi daya.</div>
+            </div>
+            <a href="{{ route('log.power.export') }}"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg shadow-sm transition">
+                Download CSV Power
+            </a>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left border-collapse">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr class="text-sm font-semibold text-gray-700">
+                        <th class="py-3 px-3">Waktu</th>
+                        <th class="py-3 px-3">Perangkat</th>
+                        <th class="py-3 px-3">Current (mA)</th>
+                    </tr>
+                </thead>
+                <tbody id="power-log-rows" class="text-sm text-gray-700">
+                    <tr>
+                        <td colspan="3" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -162,6 +192,27 @@
 (() => {
     const intervalMs = 5000;
     let currentPage = 1;
+    function renderPowerRows(rows) {
+        const tbody = document.getElementById('power-log-rows');
+        if (!tbody) return;
+
+        if (!rows || !rows.length) {
+            tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td></tr>';
+            return;
+        }
+
+        let html = '';
+        rows.forEach((r) => {
+            let datetime = (r.timestamp ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+            html += `<tr class="border-b border-gray-100 hover:bg-slate-50 transition">` +
+                `<td class="py-2 px-3">${datetime}</td>` +
+                `<td class="py-2 px-3">${r.device_name ?? ''}</td>` +
+                `<td class="py-2 px-3">${Number(r.current_ma ?? 0).toFixed(2)}</td>` +
+            `</tr>`;
+        });
+
+        tbody.innerHTML = html;
+    }
 
     function render(data) {
         // update stats
@@ -275,11 +326,28 @@
         }
     }
 
+    async function fetchPowerLogs() {
+        try {
+            const device = document.getElementById('filter-device')?.value || '';
+            const params = new URLSearchParams();
+            params.append('limit', '120');
+            if (device) params.append('device', device);
+
+            const res = await fetch('/api/power-logs?' + params.toString());
+            if (!res.ok) return;
+
+            const json = await res.json();
+            renderPowerRows(json.rows || []);
+        } catch (_) {
+            // ignore
+        }
+    }
+
     // Add change listeners to filters
-    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
-    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
-    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
-    document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); });
+    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
 
     // Function to go to specific page
     window.goToPage = function(page) {
@@ -288,7 +356,9 @@
 
     // initial fetch and start auto-refresh
     fetchLogs();
+    fetchPowerLogs();
     setInterval(fetchLogs, intervalMs);
+    setInterval(fetchPowerLogs, intervalMs);
 })();
 </script>
 
