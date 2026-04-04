@@ -2,16 +2,26 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 use App\Models\CalibrationSetting;
+use App\Models\PowerLog;
 use App\Models\Telemetry;
-use PhpMqtt\Client\MqttClient;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use PhpMqtt\Client\ConnectionSettings;
+use PhpMqtt\Client\MqttClient;
 
 class MqttSubscribe extends Command
 {
+    private const POWER_INTERVAL_SECONDS = 5;
+    private const OFFLINE_TIMEOUT_SECONDS = 15;
+    private const SLEEP_STABLE_SECONDS = 600;
+    private const SLEEP_UNSTABLE_SECONDS = 60;
+
+    /** @var array<string, array<string, mixed>> */
+    private array $powerRuntime = [];
+
     /**
      * The name and signature of the console command.
      *
@@ -38,10 +48,16 @@ class MqttSubscribe extends Command
         $this->info("Connecting to MQTT broker {$host}:{$port} as {$clientId}...");
 
         $connectionSettings = (new ConnectionSettings())
-            ->setUsername($username)
-            ->setPassword($password)
             ->setKeepAliveInterval(60)
             ->setLastWillTopic(null);
+
+        if (is_string($username) && trim($username) !== '') {
+            $connectionSettings->setUsername($username);
+        }
+
+        if (is_string($password) && trim($password) !== '') {
+            $connectionSettings->setPassword($password);
+        }
 
         $mqtt = new MqttClient($host, $port, $clientId);
 
@@ -53,22 +69,21 @@ class MqttSubscribe extends Command
             return 1;
         }
 
-        $topicFilter = 'hidroganik/+/publish';
-        $this->info("Subscribing to topic filter: {$topicFilter}");
-
-        $mqtt->subscribe($topicFilter, function (string $topic, string $message, int $qualityOfService, bool $retained) {
-            echo "[" . date('Y-m-d H:i:s') . "] MQTT msg on: {$topic}\n";
-            echo "Payload: {$message}\n";
-            $this->processMessage($topic, $message, $qualityOfService, $retained);
+        $mqtt->subscribe('hidroganik/+/publish', function (string $topic, string $message, bool $retained) {
+            $this->processMessage($topic, $message, 0, $retained);
         }, 0);
+        $mqtt->subscribe('hidroganik/+/status', function (string $topic, string $message, bool $retained) {
+            $this->processMessage($topic, $message, 0, $retained);
+        }, 0);
+        $this->info('Subscribed to: hidroganik/+/publish and hidroganik/+/status');
 
-        // Loop forever to keep subscription alive
-        $this->info('Listening for messages (press CTRL+C to quit)...');
+        $mqtt->registerLoopEventHandler(function () {
+            $this->tickPowerGeneration();
+        });
+
+        $this->info('Listening for messages + event-driven power generation (press CTRL+C to quit)...');
         try {
-            while (true) {
-                // blocking loop for up to 1 second waiting for messages
-                $mqtt->loop(true);
-            }
+            $mqtt->loop(true);
         } catch (\Throwable $e) {
             $this->error('MQTT loop error: ' . $e->getMessage());
             Log::error('MQTT loop error: ' . $e->getMessage());
@@ -82,22 +97,54 @@ class MqttSubscribe extends Command
 
     protected function processMessage(string $topic, string $message, int $qos, bool $retained): void
     {
-        $this->info("Message received on {$topic} (QoS={$qos})");
         Log::info('MQTT raw message', ['topic' => $topic, 'payload' => $message, 'qos' => $qos, 'retained' => $retained]);
 
-        // Try to decode JSON
+        $parts = explode('/', $topic);
+        $kebun = $parts[1] ?? null;
+        $kind = strtolower($parts[2] ?? '');
+
+        if (!$kebun || !in_array($kind, ['publish', 'status'], true)) {
+            return;
+        }
+
+        if ($kind === 'publish') {
+            $this->handlePublishMessage($kebun, $topic, $message, $qos, $retained);
+            return;
+        }
+
+        $this->handleStatusMessage($kebun, $message);
+    }
+
+    protected function handleStatusMessage(string $kebun, string $message): void
+    {
+        $payload = json_decode($message, true);
+        if (!is_array($payload)) {
+            $payload = ['status' => trim($message)];
+        }
+
+        $rawState = $payload['state'] ?? $payload['status'] ?? '';
+        $state = $this->normalizeState((string) $rawState);
+        $mode = $this->normalizeMode($payload['mode'] ?? $payload['device_mode'] ?? $payload['current_mode'] ?? null);
+
+        if ($state === null && $mode === null) {
+            return;
+        }
+
+        $sleepSeconds = $state === 'SLEEPING'
+            ? $this->resolveSleepSeconds($payload)
+            : null;
+
+        $this->markDeviceSignal($kebun, $state, $mode, $sleepSeconds);
+    }
+
+    protected function handlePublishMessage(string $kebun, string $topic, string $message, int $qos, bool $retained): void
+    {
         $data = json_decode($message, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->error('Received invalid JSON: ' . json_last_error_msg());
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
             Log::warning('MQTT invalid JSON', ['topic' => $topic, 'payload' => $message]);
             return;
         }
 
-        // extract kebun name from topic (expected format: hidroganik/{kebun}/publish)
-        $parts = explode('/', $topic);
-        $kebun = $parts[1] ?? null;
-
-        // normalize expected fields (example from your format)
         $rawPayload = [
             'topic' => $topic,
             'kebun' => $kebun,
@@ -114,29 +161,247 @@ class MqttSubscribe extends Command
             'raw' => $data,
         ];
 
-        // Apply calibration
         $calibratedPayload = $this->applyCalibration($kebun, $rawPayload);
-
-        // Log calibrated payload
-        Log::info('MQTT telemetry received (calibrated)', $calibratedPayload);
-        echo "Calibrated TDS: " . ($calibratedPayload['tds'] ?? 'null') . " | Suhu: " . ($calibratedPayload['suhu'] ?? 'null') . "\n";
-
-        // Store to database
         $this->saveTelemetry($calibratedPayload);
-        echo "Saved to DB (kebun=" . ($calibratedPayload['kebun'] ?? '-') . ")\n";
 
-        // store latest telemetry in cache for frontend polling
-        if (!empty($kebun)) {
-            $key = "telemetry:{$kebun}";
-            Cache::put($key, $calibratedPayload, now()->addMinutes(60));
+        Cache::put("telemetry:{$kebun}", $calibratedPayload, now()->addMinutes(60));
+        $index = Cache::get('telemetry:index', []);
+        if (!in_array($kebun, $index, true)) {
+            $index[] = $kebun;
+            Cache::put('telemetry:index', $index, now()->addHours(6));
+        }
 
-            // maintain an index of kebuns
-            $index = Cache::get('telemetry:index', []);
-            if (!in_array($kebun, $index)) {
-                $index[] = $kebun;
-                Cache::put('telemetry:index', $index, now()->addHours(6));
+        $mode = $this->normalizeMode($data['mode'] ?? $data['device_mode'] ?? $data['current_mode'] ?? null);
+        $state = $mode === 'CALIBRATION' ? 'CALIBRATION' : 'ACTIVE';
+        $this->markDeviceSignal($kebun, $state, $mode, null);
+    }
+
+    protected function markDeviceSignal(string $device, ?string $state, ?string $mode, ?int $sleepSeconds): void
+    {
+        $now = time();
+        $runtime = $this->powerRuntime[$device] ?? [
+            'enabled' => false,
+            'last_mqtt_at' => 0,
+            'last_generated_at' => 0,
+            'state' => 'BOOT',
+            'mode' => 'AUTO',
+            'sleep_until' => null,
+            'prev_current' => 95.0,
+        ];
+
+        $runtime['enabled'] = true;
+        $runtime['last_mqtt_at'] = $now;
+
+        if ($mode !== null) {
+            $runtime['mode'] = $mode;
+        }
+
+        if ($state !== null) {
+            $runtime['state'] = $state;
+        }
+
+        if ($runtime['state'] === 'CALIBRATION') {
+            $runtime['mode'] = 'CALIBRATION';
+        }
+
+        if ($runtime['state'] === 'SLEEPING') {
+            $seconds = $sleepSeconds ?: self::SLEEP_UNSTABLE_SECONDS;
+            $runtime['sleep_seconds'] = $seconds;
+            $runtime['sleep_until'] = $now + $seconds;
+            Cache::put("device_sleep_seconds:{$device}", $seconds, now()->addHours(24));
+        } else {
+            $runtime['sleep_seconds'] = null;
+            $runtime['sleep_until'] = null;
+        }
+
+        $this->powerRuntime[$device] = $runtime;
+
+        Cache::put("device_runtime:{$device}", [
+            'device' => $device,
+            'state' => $runtime['state'],
+            'mode' => $runtime['mode'],
+            'sleep_seconds' => $runtime['sleep_seconds'] ?? null,
+            'sleep_until' => $runtime['sleep_until'],
+            'updated_at' => Carbon::createFromTimestamp($now)->toDateTimeString(),
+            'power_generation_enabled' => (bool) $runtime['enabled'],
+        ], now()->addHours(6));
+    }
+
+    protected function tickPowerGeneration(): void
+    {
+        if (empty($this->powerRuntime)) {
+            return;
+        }
+
+        $now = time();
+
+        foreach ($this->powerRuntime as $device => $runtime) {
+            if (empty($runtime['enabled'])) {
+                continue;
+            }
+
+            $state = strtoupper((string) ($runtime['state'] ?? 'ACTIVE'));
+            $mode = strtoupper((string) ($runtime['mode'] ?? 'AUTO'));
+            $lastSeen = (int) ($runtime['last_mqtt_at'] ?? 0);
+            $sleepUntil = $runtime['sleep_until'] ?? null;
+            $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
+
+            if (!$isSleepingWindow && ($now - $lastSeen) > self::OFFLINE_TIMEOUT_SECONDS) {
+                $runtime['enabled'] = false;
+                $this->powerRuntime[$device] = $runtime;
+                continue;
+            }
+
+            $lastGeneratedAt = (int) ($runtime['last_generated_at'] ?? 0);
+            if (($now - $lastGeneratedAt) < self::POWER_INTERVAL_SECONDS) {
+                continue;
+            }
+
+            $current = $this->generateCurrentForRuntime($runtime);
+            $runtime['last_generated_at'] = $now;
+            $this->powerRuntime[$device] = $runtime;
+
+            try {
+                PowerLog::create([
+                    'device_name' => $device,
+                    'state' => $state,
+                    'mode' => $mode,
+                    'current_ma' => $current,
+                    'timestamp' => Carbon::createFromTimestamp($now),
+                    'is_estimated' => true,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to save power log: ' . $e->getMessage(), ['device' => $device]);
             }
         }
+    }
+
+    protected function generateCurrentForRuntime(array &$runtime): float
+    {
+        $state = strtoupper((string) ($runtime['state'] ?? 'ACTIVE'));
+        $mode = strtoupper((string) ($runtime['mode'] ?? 'AUTO'));
+        $prevCurrent = (float) ($runtime['prev_current'] ?? 95.0);
+
+        $target = 100.0;
+        $jitter = 0.0;
+        $spikeChance = 0.0;
+
+        if ($state === 'SLEEPING') {
+            $target = $this->randomFloat(1.5, 3.0);
+            $jitter = $this->randomFloat(-0.08, 0.08);
+        } elseif ($state === 'BOOT') {
+            $target = $this->randomFloat(80, 110);
+            $jitter = $this->randomFloat(-8, 8);
+            $spikeChance = 0.08;
+        } elseif ($mode === 'CALIBRATION' || $state === 'CALIBRATION') {
+            $target = $this->randomFloat(90, 130);
+            $jitter = $this->randomFloat(-2, 2);
+            $spikeChance = 0.01;
+        } else {
+            $target = $this->randomFloat(80, 240);
+            $jitter = $this->randomFloat(-4, 4);
+            $spikeChance = 0.05;
+        }
+
+        $current = ($prevCurrent * 0.65) + ($target * 0.35) + $jitter;
+
+        if ($spikeChance > 0 && mt_rand() / mt_getrandmax() < $spikeChance) {
+            $current += $this->randomFloat(20, 40);
+        }
+
+        if ($state === 'SLEEPING') {
+            $current = $this->clamp($current, 1.5, 3.0);
+        } elseif ($state === 'BOOT') {
+            $current = $this->clamp($current, 70, 150);
+        } elseif ($mode === 'CALIBRATION' || $state === 'CALIBRATION') {
+            $current = $this->clamp($current, 88, 140);
+        } else {
+            $current = $this->clamp($current, 70, 260);
+        }
+
+        $runtime['prev_current'] = $current;
+        return round($current, 2);
+    }
+
+    protected function normalizeState(?string $raw): ?string
+    {
+        $value = strtolower(trim((string) $raw));
+        if ($value === '') {
+            return null;
+        }
+
+        $map = [
+            'boot' => 'BOOT',
+            'power_on_or_reset' => 'BOOT',
+            'active' => 'ACTIVE',
+            'device_connected' => 'ACTIVE',
+            'wake_up_from_deep_sleep' => 'ACTIVE',
+            'calibration' => 'CALIBRATION',
+            'mode_cal' => 'CALIBRATION',
+            'sleeping' => 'SLEEPING',
+            'going_to_sleep' => 'SLEEPING',
+        ];
+
+        return $map[$value] ?? null;
+    }
+
+    protected function normalizeMode($raw): ?string
+    {
+        $value = strtolower(trim((string) $raw));
+        if ($value === '') {
+            return null;
+        }
+
+        if (in_array($value, ['auto', 'mode_auto'], true)) {
+            return 'AUTO';
+        }
+
+        if (in_array($value, ['calibration', 'cal', 'mode_cal'], true)) {
+            return 'CALIBRATION';
+        }
+
+        return null;
+    }
+
+    protected function resolveSleepSeconds(array $payload): int
+    {
+        $explicit = $payload['sleepSeconds'] ?? $payload['sleep_seconds'] ?? $payload['tSleep'] ?? null;
+        if (is_numeric($explicit) && (int) $explicit > 0) {
+            return (int) $explicit;
+        }
+
+        $stableFlags = [
+            $payload['stable'] ?? null,
+            $payload['isStable'] ?? null,
+            $payload['deep_sleep_stable'] ?? null,
+            $payload['sleep_stable'] ?? null,
+        ];
+
+        foreach ($stableFlags as $flag) {
+            if ($flag === null) {
+                continue;
+            }
+
+            $bool = filter_var($flag, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($bool === true) {
+                return self::SLEEP_STABLE_SECONDS;
+            }
+            if ($bool === false) {
+                return self::SLEEP_UNSTABLE_SECONDS;
+            }
+        }
+
+        return self::SLEEP_UNSTABLE_SECONDS;
+    }
+
+    protected function randomFloat(float $min, float $max): float
+    {
+        return $min + (mt_rand() / mt_getrandmax()) * ($max - $min);
+    }
+
+    protected function clamp(float $value, float $min, float $max): float
+    {
+        return min($max, max($min, $value));
     }
 
     protected function applyCalibration(string $kebun, array $payload): array

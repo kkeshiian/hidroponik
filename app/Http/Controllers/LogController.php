@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PowerLog;
 use App\Models\Telemetry;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -282,6 +283,74 @@ class LogController extends Controller
                 });
             } catch (\Illuminate\Database\QueryException $e) {
                 // nothing to stream
+            }
+
+            fclose($handle);
+        };
+
+        return new StreamedResponse($callback, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function powerApi(Request $request)
+    {
+        try {
+            $limit = (int) $request->input('limit', 100);
+            $limit = max(1, min($limit, 500));
+
+            $query = PowerLog::query()->orderByDesc('timestamp');
+
+            if ($request->filled('device')) {
+                $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
+            }
+
+            $rows = $query->limit($limit)->get([
+                'device_name',
+                'state',
+                'mode',
+                'current_ma',
+                'timestamp',
+                'is_estimated',
+            ]);
+
+            return Response::json([
+                'rows' => $rows,
+                'generated_at' => now()->toDateTimeString(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Power API error: ' . $e->getMessage());
+            return Response::json(['rows' => [], 'generated_at' => now()->toDateTimeString()], 200);
+        }
+    }
+
+    public function powerExport(Request $request)
+    {
+        $filename = 'power_current_export_' . date('Ymd_His') . '.csv';
+
+        $callback = function () use ($request) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['Waktu', 'Perangkat', 'Current (mA)']);
+
+            try {
+                $query = PowerLog::query()->orderByDesc('timestamp');
+
+                if ($request->filled('device')) {
+                    $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
+                }
+
+                $query->chunk(300, function ($rows) use ($handle) {
+                    foreach ($rows as $r) {
+                        fputcsv($handle, [
+                            $r->timestamp,
+                            $r->device_name,
+                            $r->current_ma,
+                        ]);
+                    }
+                });
+            } catch (\Throwable $e) {
+                Log::error('Power CSV export error: ' . $e->getMessage());
             }
 
             fclose($handle);

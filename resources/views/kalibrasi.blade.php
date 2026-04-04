@@ -53,7 +53,12 @@
 
                 <div class="space-y-3">
                     <div class="bg-slate-100 border border-slate-200 rounded-lg p-3">
-                        <div class="text-xs font-semibold text-slate-700 mb-1">Status MQTT</div>
+                        <div class="text-xs font-semibold text-slate-700 mb-1">Status ESP</div>
+                        <div class="flex items-center gap-2">
+                            <div id="esp-state-{{ $card['key'] }}" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">UNKNOWN</div>
+                            <div id="esp-detail-{{ $card['key'] }}" class="text-xs text-slate-600 whitespace-pre-line">Menunggu status dari ESP...</div>
+                        </div>
+                        <div class="text-[11px] font-medium text-slate-600 mt-2">Status Command / MQTT Event</div>
                         <div id="status-{{ $card['key'] }}" class="text-sm text-slate-600">Menunggu koneksi MQTT...</div>
                         <div class="mt-2 flex items-center gap-2">
                             <div class="text-xs font-semibold text-slate-700">Mode:</div>
@@ -178,11 +183,167 @@ const statusFailMap = {
 };
 
 const state = {
-    'kebun-a': { busy: false, waiting: null, timeoutId: null, countdownId: null, mode: 'unknown' },
-    'kebun-b': { busy: false, waiting: null, timeoutId: null, countdownId: null, mode: 'unknown' },
+    'kebun-a': {
+        busy: false,
+        waiting: null,
+        timeoutId: null,
+        countdownId: null,
+        mode: 'unknown',
+        espMainState: 'unknown',
+        power: {
+            deviceState: 'boot',
+            sleepSeconds: null,
+            wakeEstimate: null,
+            lastSensorAt: 0,
+            mqttBurstUntil: 0,
+            prevCurrent: 95,
+            currentHistory: [],
+            powerHistory: [],
+            lastPayload: null,
+        },
+    },
+    'kebun-b': {
+        busy: false,
+        waiting: null,
+        timeoutId: null,
+        countdownId: null,
+        mode: 'unknown',
+        espMainState: 'unknown',
+        power: {
+            deviceState: 'boot',
+            sleepSeconds: null,
+            wakeEstimate: null,
+            lastSensorAt: 0,
+            mqttBurstUntil: 0,
+            prevCurrent: 95,
+            currentHistory: [],
+            powerHistory: [],
+            lastPayload: null,
+        },
+    },
 };
 
 let mqttClient = null;
+let dummyPowerTimer = null;
+const deepSleepModeHint = 'Mode deep sleep: 60 detik atau 600 detik.';
+
+function resolveDeepSleepModeLabel(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return 'mode belum terbaca';
+    if (seconds >= 540) return 'mode 600 detik';
+    if (seconds >= 45 && seconds <= 120) return 'mode 60 detik';
+    return `mode ${Math.round(seconds)} detik`;
+}
+
+function buildDeepSleepDetail(sleepSeconds, wakeTimeText = '') {
+    const modeLabel = resolveDeepSleepModeLabel(sleepSeconds);
+    const modeLine = `Masuk ${modeLabel}. ${deepSleepModeHint}`;
+
+    let wakeLine = 'Perkiraan bangun: menunggu data...';
+    if (wakeTimeText) {
+        wakeLine = `Perkiraan bangun: ${wakeTimeText}`;
+    } else if (Number.isFinite(sleepSeconds) && sleepSeconds > 0) {
+        const eta = formatWakeEstimate(sleepSeconds);
+        if (eta) {
+            wakeLine = `Perkiraan bangun: ${eta}`;
+        }
+    }
+
+    return `${modeLine}\n${wakeLine}`;
+}
+
+function persistUiState() {
+    // Intentionally no-op: runtime source of truth is backend cache/API for cross-device consistency.
+}
+
+function restoreUiState() {
+    // Intentionally no-op: runtime source of truth is backend cache/API for cross-device consistency.
+}
+
+function applyRuntimeStateFromBackend(kebun, runtime) {
+    if (!runtime || !state[kebun]) return;
+
+    const modeRaw = String(runtime.mode || '').toUpperCase();
+    if (modeRaw === 'CALIBRATION') {
+        setMode(kebun, 'mode_cal');
+    } else if (modeRaw === 'AUTO') {
+        setMode(kebun, 'mode_auto');
+    }
+
+    const badge = espStateEl(kebun);
+    const detail = espDetailEl(kebun);
+    if (!badge || !detail) return;
+
+    const runtimeState = String(runtime.state || '').toUpperCase();
+
+    let label = 'UNKNOWN';
+    let detailText = 'Menunggu status dari ESP...';
+    let badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700';
+
+    if (runtimeState === 'BOOT') {
+        label = 'Menyala / Restart';
+        detailText = 'Status terakhir: boot';
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700';
+        state[kebun].espMainState = 'boot';
+    } else if (runtimeState === 'ACTIVE') {
+        label = 'Active';
+        detailText = 'Status terakhir: active';
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
+        state[kebun].espMainState = 'awake';
+    } else if (runtimeState === 'CALIBRATION') {
+        label = 'Calibration';
+        detailText = 'Status terakhir: calibration';
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+        state[kebun].espMainState = 'awake';
+    } else if (runtimeState === 'SLEEPING') {
+        const sleepUntil = Number(runtime.sleep_until ?? 0);
+        let sleepSeconds = Number(runtime.sleep_seconds ?? 0);
+        let wakeTimeText = '';
+
+        if (Number.isFinite(sleepUntil) && sleepUntil > 0) {
+            const remaining = Math.max(0, Math.round(sleepUntil - (Date.now() / 1000)));
+            if ((!Number.isFinite(sleepSeconds) || sleepSeconds <= 0) && remaining > 0) {
+                sleepSeconds = remaining;
+            }
+            if (remaining > 0) {
+                wakeTimeText = new Date(sleepUntil * 1000).toLocaleTimeString('id-ID', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                });
+            }
+        }
+
+        label = 'Deep Sleep';
+        const hasSleepDuration = Number.isFinite(sleepSeconds) && sleepSeconds > 0;
+        const hasWakeEstimate = wakeTimeText !== '';
+        detailText = hasSleepDuration || hasWakeEstimate
+            ? buildDeepSleepDetail(sleepSeconds, wakeTimeText)
+            : buildDeepSleepDetail(0, '');
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        state[kebun].espMainState = 'sleeping';
+    }
+
+    badge.textContent = label;
+    badge.className = badgeClass;
+    detail.textContent = detailText;
+    persistUiState();
+}
+
+async function hydrateUiStateFromBackend() {
+    try {
+        const response = await fetch('/api/device-runtime-state', { cache: 'no-store' });
+        if (!response.ok) return;
+
+        const runtimeMap = await response.json();
+        if (!runtimeMap || typeof runtimeMap !== 'object') return;
+
+        Object.keys(kebunConfig).forEach((kebun) => {
+            applyRuntimeStateFromBackend(kebun, runtimeMap[kebun] || null);
+        });
+    } catch (_) {
+        // ignore fetch errors; live MQTT updates can still refresh the UI afterward
+    }
+}
 
 function normalizeKebun(value) {
     if (!value) return null;
@@ -201,6 +362,14 @@ function modeEl(kebun) {
     return document.getElementById(`mode-${kebun}`);
 }
 
+function espStateEl(kebun) {
+    return document.getElementById(`esp-state-${kebun}`);
+}
+
+function espDetailEl(kebun) {
+    return document.getElementById(`esp-detail-${kebun}`);
+}
+
 function setMode(kebun, mode) {
     if (!state[kebun]) return;
     const normalized = String(mode || '').toLowerCase();
@@ -212,17 +381,20 @@ function setMode(kebun, mode) {
     if (normalized === 'mode_cal') {
         el.textContent = 'MODE_CAL';
         el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        persistUiState();
         return;
     }
 
     if (normalized === 'mode_auto') {
         el.textContent = 'MODE_AUTO';
         el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+        persistUiState();
         return;
     }
 
     el.textContent = 'UNKNOWN';
     el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700';
+    persistUiState();
 }
 
 function setStatus(kebun, text, isError = false) {
@@ -231,6 +403,71 @@ function setStatus(kebun, text, isError = false) {
     el.textContent = text;
     el.classList.remove('text-slate-600', 'text-green-700', 'text-red-600');
     el.classList.add(isError ? 'text-red-600' : 'text-green-700');
+}
+
+function formatWakeEstimate(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '';
+    const eta = new Date(Date.now() + (seconds * 1000));
+    return eta.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function setEspState(kebun, status, payload = null) {
+    const badge = espStateEl(kebun);
+    const detail = espDetailEl(kebun);
+    if (!badge || !detail || !state[kebun]) return;
+
+    const statusLc = String(status || '').trim().toLowerCase();
+    let label = 'UNKNOWN';
+    let detailText = 'Menunggu status dari ESP...';
+    let badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700';
+
+    if (statusLc === 'power_on_or_reset') {
+        label = 'Menyala / Restart';
+        detailText = 'ESP baru boot atau reset.';
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700';
+        state[kebun].espMainState = 'boot';
+        setDummyDeviceState(kebun, 'boot');
+    } else if (statusLc === 'wake_up_from_deep_sleep') {
+        label = 'Bangun dari Sleep';
+        detailText = 'ESP aktif kembali setelah deep sleep.';
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
+        state[kebun].espMainState = 'awake';
+        setDummyDeviceState(kebun, 'awake');
+    } else if (statusLc === 'going_to_sleep') {
+        const sleepSeconds = Number(payload?.sleepSeconds ?? payload?.tSleep ?? payload?.sleep_seconds ?? 0);
+        const eta = formatWakeEstimate(sleepSeconds);
+
+        label = 'Deep Sleep';
+        detailText = buildDeepSleepDetail(sleepSeconds, eta);
+        badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        state[kebun].espMainState = 'sleeping';
+        setDummyDeviceState(kebun, 'sleeping', { sleepSeconds });
+    } else if (statusLc === 'device_connected') {
+        if (state[kebun].espMainState === 'unknown') {
+            label = 'MQTT Connected';
+            badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700';
+        } else if (state[kebun].espMainState === 'sleeping') {
+            label = 'Deep Sleep';
+            badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+        } else if (state[kebun].espMainState === 'boot') {
+            label = 'Menyala / Restart';
+            badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700';
+        } else {
+            label = 'Bangun dari Sleep';
+            badgeClass = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
+        }
+        detailText = 'Koneksi MQTT ke broker aktif.';
+        if (state[kebun].power.deviceState === 'boot') {
+            setDummyDeviceState(kebun, 'awake');
+        }
+    } else {
+        return;
+    }
+
+    badge.textContent = label;
+    badge.className = badgeClass;
+    detail.textContent = detailText;
+    persistUiState();
 }
 
 function setBusy(kebun, busy) {
@@ -351,6 +588,261 @@ function parseModeFromAny(payloadOrStatus) {
     return null;
 }
 
+function randomFloat(min, max) {
+    return min + (Math.random() * (max - min));
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function setDummyDeviceState(kebun, nextState, options = {}) {
+    if (!state[kebun] || !state[kebun].power) return;
+    const powerState = state[kebun].power;
+    const allowed = ['boot', 'awake', 'active', 'sleeping'];
+    if (!allowed.includes(nextState)) return;
+
+    powerState.deviceState = nextState;
+
+    if (nextState === 'sleeping') {
+        const sleepSeconds = Number(options.sleepSeconds ?? 0);
+        if (Number.isFinite(sleepSeconds) && sleepSeconds > 0) {
+            powerState.sleepSeconds = sleepSeconds;
+            powerState.wakeEstimate = Date.now() + (sleepSeconds * 1000);
+        } else {
+            powerState.sleepSeconds = null;
+            powerState.wakeEstimate = null;
+        }
+    } else {
+        powerState.sleepSeconds = null;
+        powerState.wakeEstimate = null;
+    }
+}
+
+function getPowerVisualState(kebun) {
+    const currentMode = state[kebun]?.mode || 'unknown';
+    const currentState = state[kebun]?.power?.deviceState || 'boot';
+
+    if (currentMode === 'mode_cal') {
+        return {
+            key: 'calibration',
+            label: 'CALIBRATION',
+            className: 'text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700',
+        };
+    }
+
+    if (currentState === 'sleeping') {
+        return {
+            key: 'sleeping',
+            label: 'SLEEPING',
+            className: 'text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700',
+        };
+    }
+
+    if (currentState === 'boot') {
+        return {
+            key: 'boot',
+            label: 'BOOT',
+            className: 'text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700',
+        };
+    }
+
+    if (currentState === 'awake') {
+        return {
+            key: 'awake',
+            label: 'AWAKE',
+            className: 'text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700',
+        };
+    }
+
+    return {
+        key: 'active',
+        label: 'ACTIVE',
+        className: 'text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700',
+    };
+}
+
+function drawSparkline(canvasId, values, lineColor) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, w, h);
+
+    if (!Array.isArray(values) || values.length < 2) return;
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const padX = 4;
+    const padY = 6;
+    const usableW = w - (padX * 2);
+    const usableH = h - (padY * 2);
+
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padX, h - padY);
+    ctx.lineTo(w - padX, h - padY);
+    ctx.stroke();
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    values.forEach((value, index) => {
+        const x = padX + ((values.length === 1 ? 0 : index / (values.length - 1)) * usableW);
+        const y = (h - padY) - (((value - min) / range) * usableH);
+        if (index === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+
+    ctx.stroke();
+}
+
+function generatePowerDummy(kebun) {
+    if (!state[kebun] || !state[kebun].power) return null;
+    const powerState = state[kebun].power;
+    const deviceMode = state[kebun].mode === 'mode_cal' ? 'CALIBRATION' : 'AUTO';
+    const now = Date.now();
+
+    let target;
+    let jitter;
+    let spikeChance;
+    let spikeRange;
+
+    if (powerState.deviceState === 'sleeping') {
+        target = randomFloat(1.5, 3.0);
+        jitter = randomFloat(-0.08, 0.08);
+        spikeChance = 0;
+        spikeRange = [0, 0];
+    } else if (deviceMode === 'CALIBRATION') {
+        target = randomFloat(90, 130);
+        jitter = randomFloat(-2, 2);
+        spikeChance = 0.01;
+        spikeRange = [8, 16];
+    } else if (powerState.deviceState === 'boot') {
+        target = randomFloat(80, 110);
+        jitter = randomFloat(-8, 8);
+        spikeChance = 0.08;
+        spikeRange = [20, 40];
+    } else {
+        target = randomFloat(80, 240);
+        jitter = randomFloat(-4, 4);
+        spikeChance = 0.05;
+        spikeRange = [20, 40];
+    }
+
+    let current = (powerState.prevCurrent * 0.65) + (target * 0.35) + jitter;
+
+    if (now <= powerState.mqttBurstUntil) {
+        current += randomFloat(10, 24);
+    }
+
+    if (Math.random() < spikeChance) {
+        current += randomFloat(spikeRange[0], spikeRange[1]);
+    }
+
+    if (powerState.deviceState === 'sleeping') {
+        current = clamp(current, 1.5, 3.0);
+    } else if (deviceMode === 'CALIBRATION') {
+        current = clamp(current, 88, 140);
+    } else if (powerState.deviceState === 'boot') {
+        current = clamp(current, 70, 150);
+    } else {
+        current = clamp(current, 70, 260);
+    }
+
+    const voltage = clamp(randomFloat(3.6, 3.9), 3.6, 3.9);
+    const powermW = current * voltage;
+
+    powerState.prevCurrent = current;
+
+    return {
+        source: 'dummy_power',
+        deviceState: powerState.deviceState,
+        mode: deviceMode,
+        currentmA: Number(current.toFixed(2)),
+        voltage: Number(voltage.toFixed(2)),
+        powermW: Number(powermW.toFixed(2)),
+        estimated: true,
+        timestamp: Math.floor(now / 1000),
+    };
+}
+
+function renderDummyPower(kebun, payload) {
+    if (!payload || !state[kebun] || !state[kebun].power) return;
+    const powerState = state[kebun].power;
+
+    powerState.currentHistory.push(payload.currentmA);
+    powerState.powerHistory.push(payload.powermW);
+    if (powerState.currentHistory.length > 45) powerState.currentHistory.shift();
+    if (powerState.powerHistory.length > 45) powerState.powerHistory.shift();
+    powerState.lastPayload = payload;
+
+    const visual = getPowerVisualState(kebun);
+    const badge = document.getElementById(`power-state-${kebun}`);
+    if (badge) {
+        badge.textContent = visual.label;
+        badge.className = visual.className;
+    }
+
+    const currentEl = document.getElementById(`power-current-${kebun}`);
+    const voltageEl = document.getElementById(`power-voltage-${kebun}`);
+    const powerEl = document.getElementById(`power-value-${kebun}`);
+    const metaEl = document.getElementById(`power-meta-${kebun}`);
+
+    if (currentEl) currentEl.textContent = `${payload.currentmA.toFixed(2)} mA`;
+    if (voltageEl) voltageEl.textContent = `${payload.voltage.toFixed(2)} V`;
+    if (powerEl) powerEl.textContent = `${payload.powermW.toFixed(2)} mW`;
+
+    if (metaEl) {
+        let extra = 'Source: dummy_power | estimated=true';
+        if (powerState.deviceState === 'sleeping' && powerState.wakeEstimate) {
+            const eta = new Date(powerState.wakeEstimate).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            });
+            extra += ` | wake_estimate=${eta}`;
+        }
+        metaEl.textContent = extra;
+    }
+
+    drawSparkline(`power-current-chart-${kebun}`, powerState.currentHistory, '#16a34a');
+    drawSparkline(`power-value-chart-${kebun}`, powerState.powerHistory, '#0284c7');
+
+    window.dispatchEvent(new CustomEvent('dummy-power-update', { detail: { kebun, payload } }));
+}
+
+function startDummyPowerLoop() {
+    if (dummyPowerTimer) return;
+
+    Object.keys(kebunConfig).forEach((kebun) => {
+        const initialPayload = generatePowerDummy(kebun);
+        if (initialPayload) {
+            renderDummyPower(kebun, initialPayload);
+        }
+    });
+
+    dummyPowerTimer = setInterval(() => {
+        Object.keys(kebunConfig).forEach((kebun) => {
+            const payload = generatePowerDummy(kebun);
+            if (payload) {
+                renderDummyPower(kebun, payload);
+            }
+        });
+    }, 1000);
+}
+
 function showInfoAlert(title, text, icon = 'info') {
     if (typeof Swal !== 'undefined') {
         Swal.fire({ icon, title, text, confirmButtonColor: '#16a34a' });
@@ -456,6 +948,8 @@ function processStatus(topicKebun, payload) {
         setMode(kebun, modeFromStatus);
     }
 
+    setEspState(kebun, status, payload);
+
     setStatus(kebun, `Status: ${status}`);
 
     const waiting = state[kebun].waiting;
@@ -481,6 +975,12 @@ function processStatus(topicKebun, payload) {
 function updatePreview(kebunFromTopic, data) {
     const kebun = normalizeKebun(kebunFromTopic);
     if (!kebun) return;
+
+    if (state[kebun]?.power) {
+        state[kebun].power.lastSensorAt = Date.now();
+        state[kebun].power.mqttBurstUntil = Date.now() + 2200;
+        setDummyDeviceState(kebun, 'active');
+    }
 
     const modeFromPayload = parseModeFromAny(data);
     if (modeFromPayload) {
@@ -656,6 +1156,7 @@ function sendQuickCommand(kebun, command) {
     });
 }
 
+hydrateUiStateFromBackend();
 connectMQTT();
 </script>
 @endsection
