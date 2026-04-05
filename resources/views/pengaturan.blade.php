@@ -110,6 +110,30 @@
         </div>
     </div>
 
+    <!-- Power Wh Interval Settings -->
+    <div class="bg-white shadow-sm rounded-lg p-4 md:p-8 mb-6">
+        <div class="flex items-center gap-3 mb-6">
+            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+            <h2 class="text-xl md:text-2xl font-bold text-gray-800">Interval Perhitungan Wh</h2>
+        </div>
+
+        <p class="text-gray-600 mb-6">Interval ini dipakai untuk rumus energi: Wh = V x I x (t/3600). Nilai tersimpan di database dan berlaku untuk semua device.</p>
+
+        <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div>
+                <label for="power-interval-detik" class="block text-sm font-medium text-gray-700 mb-2">Interval (detik)</label>
+                <input id="power-interval-detik" type="number" min="1" max="86400" step="1" value="{{ $powerWhIntervalSeconds ?? 5 }}"
+                    class="w-40 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all" />
+            </div>
+            <button onclick="savePowerInterval()"
+                class="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-sm">
+                Simpan Interval Wh
+            </button>
+        </div>
+    </div>
+
     <!-- Data Management -->
     <div class="bg-white shadow-sm rounded-lg p-4 md:p-8">
         <div class="flex items-center gap-3 mb-6">
@@ -272,6 +296,52 @@ async function deleteData(period) {
                 confirmButtonColor: '#16a34a'
             });
         }
+    }
+}
+
+async function savePowerInterval() {
+    const input = document.getElementById('power-interval-detik');
+    const intervalDetik = Number(input?.value || 0);
+
+    if (!Number.isFinite(intervalDetik) || intervalDetik <= 0 || intervalDetik > 86400) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Input tidak valid',
+            text: 'Interval harus 1 sampai 86400 detik.',
+            confirmButtonColor: '#16a34a'
+        });
+        return;
+    }
+
+    try {
+        const response = await fetch('/pengaturan/power-interval', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ interval_detik: Math.round(intervalDetik) })
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Gagal menyimpan interval Wh');
+        }
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: data.message,
+            confirmButtonColor: '#16a34a'
+        });
+    } catch (error) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal',
+            text: error.message,
+            confirmButtonColor: '#16a34a'
+        });
     }
 }
 </script>

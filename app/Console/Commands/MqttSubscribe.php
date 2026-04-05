@@ -8,6 +8,7 @@ use App\Models\CalibrationSetting;
 use App\Models\PowerLog;
 use App\Models\Telemetry;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PhpMqtt\Client\ConnectionSettings;
 use PhpMqtt\Client\MqttClient;
@@ -15,12 +16,15 @@ use PhpMqtt\Client\MqttClient;
 class MqttSubscribe extends Command
 {
     private const POWER_INTERVAL_SECONDS = 5;
+    private const POWER_INTERVAL_SETTING_KEY = 'power_wh_interval_seconds';
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
 
     /** @var array<string, array<string, mixed>> */
     private array $powerRuntime = [];
+    private int $powerIntervalSeconds = self::POWER_INTERVAL_SECONDS;
+    private int $lastPowerIntervalLoadTs = 0;
 
     /**
      * The name and signature of the console command.
@@ -234,6 +238,7 @@ class MqttSubscribe extends Command
         }
 
         $now = time();
+        $intervalSeconds = $this->getPowerIntervalSeconds($now);
 
         foreach ($this->powerRuntime as $device => $runtime) {
             if (empty($runtime['enabled'])) {
@@ -253,7 +258,7 @@ class MqttSubscribe extends Command
             }
 
             $lastGeneratedAt = (int) ($runtime['last_generated_at'] ?? 0);
-            if (($now - $lastGeneratedAt) < self::POWER_INTERVAL_SECONDS) {
+            if (($now - $lastGeneratedAt) < $intervalSeconds) {
                 continue;
             }
 
@@ -274,6 +279,30 @@ class MqttSubscribe extends Command
                 Log::error('Failed to save power log: ' . $e->getMessage(), ['device' => $device]);
             }
         }
+    }
+
+    protected function getPowerIntervalSeconds(int $now): int
+    {
+        // Refresh every 2 seconds so change in Settings applies quickly.
+        if (($now - $this->lastPowerIntervalLoadTs) < 2) {
+            return $this->powerIntervalSeconds;
+        }
+
+        $this->lastPowerIntervalLoadTs = $now;
+
+        try {
+            $value = DB::table('app_settings')
+                ->where('setting_key', self::POWER_INTERVAL_SETTING_KEY)
+                ->value('setting_value');
+
+            if (is_numeric($value)) {
+                $this->powerIntervalSeconds = max(1, min(86400, (int) $value));
+            }
+        } catch (\Throwable $e) {
+            // Keep previous interval value when DB is temporarily unavailable.
+        }
+
+        return $this->powerIntervalSeconds;
     }
 
     protected function generateCurrentForRuntime(array &$runtime): float
