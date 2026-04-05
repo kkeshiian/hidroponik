@@ -13,7 +13,7 @@ echo.
 cd /d "%~dp0"
 
 :loop
-php artisan mqtt:listen
+php artisan mqtt:subscribe
 
 echo.
 echo ================================================

@@ -38,7 +38,7 @@ echo Project directory: %PROJECT_DIR%
 echo.
 
 echo Installing service...
-nssm install %SERVICE_NAME% "%PHP_PATH%" "artisan mqtt:listen"
+nssm install %SERVICE_NAME% "%PHP_PATH%" "artisan mqtt:subscribe"
 nssm set %SERVICE_NAME% AppDirectory "%PROJECT_DIR%"
 nssm set %SERVICE_NAME% DisplayName "Hidroponik MQTT Listener"
 nssm set %SERVICE_NAME% Description "Background service to listen MQTT messages and save to database"

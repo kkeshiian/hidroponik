@@ -222,7 +222,7 @@ class MqttSubscribe extends Command
             'mode' => $runtime['mode'],
             'sleep_seconds' => $runtime['sleep_seconds'] ?? null,
             'sleep_until' => $runtime['sleep_until'],
-            'updated_at' => Carbon::createFromTimestamp($now)->toDateTimeString(),
+            'updated_at' => now()->toDateTimeString(),
             'power_generation_enabled' => (bool) $runtime['enabled'],
         ], now()->addHours(6));
     }
@@ -267,7 +267,7 @@ class MqttSubscribe extends Command
                     'state' => $state,
                     'mode' => $mode,
                     'current_ma' => $current,
-                    'timestamp' => Carbon::createFromTimestamp($now),
+                    'timestamp' => now(),
                     'is_estimated' => true,
                 ]);
             } catch (\Throwable $e) {

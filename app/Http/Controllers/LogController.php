@@ -13,6 +13,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
+    private function estimatedVoltage(?string $deviceName, $timestamp): float
+    {
+        $seed = strtolower((string) $deviceName) . '|' . (string) $timestamp;
+        $hash = abs(crc32($seed));
+
+        // Range 4.8V - 5.2V with deterministic small fluctuation per row.
+        return 4.8 + (($hash % 401) / 1000);
+    }
+
     private function normalizedDate(?string $value): ?string
     {
         if (!$value) {
@@ -297,6 +306,7 @@ class LogController extends Controller
     public function powerApi(Request $request)
     {
         try {
+            $sampleSeconds = 5.0;
             $limit = (int) $request->input('limit', 100);
             $limit = max(1, min($limit, 500));
 
@@ -312,8 +322,35 @@ class LogController extends Controller
                 'mode',
                 'current_ma',
                 'timestamp',
+                'created_at',
                 'is_estimated',
             ]);
+
+            $energyByDevice = [];
+            $computedRows = [];
+
+            foreach ($rows->sortBy('timestamp')->values() as $row) {
+                $device = (string) ($row->device_name ?? 'unknown');
+                $currentMa = (float) ($row->current_ma ?? 0.0);
+                $currentA = $currentMa / 1000.0;
+                $voltageV = $this->estimatedVoltage($device, $row->timestamp ?? $row->created_at);
+                $powerW = $voltageV * $currentA;
+                $deltaWh = $powerW * ($sampleSeconds / 3600.0);
+
+                $energyByDevice[$device] = ($energyByDevice[$device] ?? 0.0) + $deltaWh;
+
+                $computedRows[] = array_merge($row->toArray(), [
+                    'current_a' => round($currentA, 6),
+                    'voltage_v' => round($voltageV, 2),
+                    'power_w' => round($powerW, 3),
+                    'watt_hour' => round($deltaWh, 5),
+                    'watt_hour_cumulative' => round($energyByDevice[$device], 5),
+                ]);
+            }
+
+            $rows = collect($computedRows)
+                ->sortByDesc('timestamp')
+                ->values();
 
             return Response::json([
                 'rows' => $rows,
@@ -331,7 +368,7 @@ class LogController extends Controller
 
         $callback = function () use ($request) {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Waktu', 'Perangkat', 'Current (mA)']);
+            fputcsv($handle, ['Waktu', 'Perangkat', 'Current (A)']);
 
             try {
                 $query = PowerLog::query()->orderByDesc('timestamp');
@@ -345,7 +382,7 @@ class LogController extends Controller
                         fputcsv($handle, [
                             $r->timestamp,
                             $r->device_name,
-                            $r->current_ma,
+                            round(((float) $r->current_ma) / 1000, 6),
                         ]);
                     }
                 });

@@ -7,6 +7,131 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Panduan Run via Termius (Server Linux)
+
+Panduan ini untuk menjalankan project di server lewat Termius, termasuk service MQTT untuk Power Consumption.
+
+### A. First Setup (sekali saat deploy awal)
+
+```bash
+cd /var/www/hidroponik
+cp .env.example .env
+composer install --no-dev --optimize-autoloader
+npm install
+php artisan key:generate
+php artisan migrate --force
+npm run build
+php artisan optimize
+```
+
+Pastikan konfigurasi di file .env sudah sesuai:
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://domain-kamu
+APP_TIMEZONE=Asia/Singapore
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=hidroponik_db
+DB_USERNAME=...
+DB_PASSWORD=...
+
+MQTT_BROKER=broker.emqx.io
+MQTT_PORT=1883
+MQTT_TOPIC=hidroganik/+/publish
+```
+
+### B. Jalankan MQTT Subscriber (wajib untuk Power Consumption)
+
+Power Consumption di halaman Log membutuhkan command ini aktif terus:
+
+```bash
+php artisan mqtt:subscribe
+```
+
+Untuk production, gunakan PM2 agar auto restart jika crash/disconnect.
+
+Install PM2 (sekali):
+
+```bash
+npm i -g pm2
+```
+
+Start service MQTT via script yang sudah disiapkan project:
+
+```bash
+npm run prod:mqtt:up
+```
+
+Daftarkan auto-start saat server reboot:
+
+```bash
+pm2 startup
+npm run prod:mqtt:save
+```
+
+### C. Perintah Harian di Termius
+
+Lihat status service PM2:
+
+```bash
+pm2 status
+```
+
+Lihat log MQTT realtime:
+
+```bash
+npm run prod:mqtt:logs
+```
+
+Restart MQTT subscriber:
+
+```bash
+npm run prod:mqtt:restart
+```
+
+Stop sementara:
+
+```bash
+npm run prod:mqtt:down
+```
+
+Hapus service dari PM2:
+
+```bash
+npm run prod:mqtt:delete
+```
+
+### D. Update Kode (setiap deploy)
+
+```bash
+cd /var/www/hidroponik
+git pull
+composer install --no-dev --optimize-autoloader
+php artisan migrate --force
+npm ci
+npm run build
+php artisan optimize:clear
+php artisan optimize
+npm run prod:mqtt:restart
+```
+
+### E. Lokasi Log Penting
+
+- storage/logs/laravel.log
+- storage/logs/mqtt-service.log
+- storage/logs/mqtt-service-error.log
+
+### F. Cek Cepat Jika Power Consumption Tidak Update
+
+1. Cek PM2 status: pm2 status
+2. Cek log subscriber: npm run prod:mqtt:logs
+3. Pastikan MQTT topic benar di .env: MQTT_TOPIC=hidroganik/+/publish
+4. Pastikan database tersambung dan migrasi power_logs sudah ada.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
