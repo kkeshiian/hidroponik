@@ -12,11 +12,13 @@ use Carbon\Carbon;
 class SettingsController extends Controller
 {
     private $configFile = 'mqtt_save_interval.json';
+    private const POWER_WH_INTERVAL_KEY = 'power_wh_interval_seconds';
     
     public function index()
     {
         // Load current interval setting
         $interval = $this->loadInterval();
+        $powerWhIntervalSeconds = $this->loadPowerWhIntervalSeconds();
         
         // Get database statistics
         try {
@@ -35,7 +37,7 @@ class SettingsController extends Controller
             ];
         }
         
-        return view('pengaturan', compact('interval', 'stats'));
+        return view('pengaturan', compact('interval', 'powerWhIntervalSeconds', 'stats'));
     }
     
     public function updateInterval(Request $request)
@@ -49,6 +51,21 @@ class SettingsController extends Controller
         return Response::json([
             'success' => true,
             'message' => 'Interval penyimpanan berhasil diperbarui'
+        ]);
+    }
+
+    public function updatePowerInterval(Request $request)
+    {
+        $validated = $request->validate([
+            'interval_detik' => 'required|integer|min:1|max:86400',
+        ]);
+
+        $this->savePowerWhIntervalSeconds((int) $validated['interval_detik']);
+
+        return Response::json([
+            'success' => true,
+            'message' => 'Interval Wh berhasil diperbarui',
+            'interval_detik' => (int) $validated['interval_detik'],
         ]);
     }
     
@@ -121,6 +138,35 @@ class SettingsController extends Controller
     {
         $data = ['interval' => $interval];
         Storage::disk('local')->put($this->configFile, json_encode($data, JSON_PRETTY_PRINT));
+    }
+
+    private function loadPowerWhIntervalSeconds(): int
+    {
+        try {
+            $value = DB::table('app_settings')
+                ->where('setting_key', self::POWER_WH_INTERVAL_KEY)
+                ->value('setting_value');
+
+            if ($value === null || !is_numeric($value)) {
+                return 5;
+            }
+
+            return max(1, min(86400, (int) $value));
+        } catch (\Throwable $e) {
+            return 5;
+        }
+    }
+
+    private function savePowerWhIntervalSeconds(int $seconds): void
+    {
+        DB::table('app_settings')->updateOrInsert(
+            ['setting_key' => self::POWER_WH_INTERVAL_KEY],
+            [
+                'setting_value' => (string) $seconds,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
     }
     
     private function getDatabaseSize()

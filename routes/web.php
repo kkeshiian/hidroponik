@@ -29,6 +29,7 @@ Route::post('/kalibrasi/{kebun}/test', [CalibrationController::class, 'test'])->
 
 Route::get('/pengaturan', [SettingsController::class, 'index'])->name('pengaturan');
 Route::post('/pengaturan/interval', [SettingsController::class, 'updateInterval'])->name('pengaturan.interval');
+Route::post('/pengaturan/power-interval', [SettingsController::class, 'updatePowerInterval'])->name('pengaturan.power.interval');
 Route::post('/pengaturan/delete', [SettingsController::class, 'deleteData'])->name('pengaturan.delete');
 
 // API: latest telemetry (polled by frontend)

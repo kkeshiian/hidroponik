@@ -13,6 +13,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
+    private const POWER_WH_INTERVAL_KEY = 'power_wh_interval_seconds';
+
     private function estimatedVoltage(?string $deviceName, $timestamp): float
     {
         $seed = strtolower((string) $deviceName) . '|' . (string) $timestamp;
@@ -20,6 +22,28 @@ class LogController extends Controller
 
         // Range 4.8V - 5.2V with deterministic small fluctuation per row.
         return 4.8 + (($hash % 401) / 1000);
+    }
+
+    private function resolvePowerIntervalSeconds(Request $request): float
+    {
+        $fromRequest = $request->input('interval_detik', $request->input('interval_seconds'));
+        if ($fromRequest !== null && is_numeric($fromRequest)) {
+            return max(1.0, min(86400.0, (float) $fromRequest));
+        }
+
+        try {
+            $value = DB::table('app_settings')
+                ->where('setting_key', self::POWER_WH_INTERVAL_KEY)
+                ->value('setting_value');
+
+            if (is_numeric($value)) {
+                return max(1.0, min(86400.0, (float) $value));
+            }
+        } catch (\Throwable $e) {
+            // fallback below
+        }
+
+        return 5.0;
     }
 
     private function normalizedDate(?string $value): ?string
@@ -306,7 +330,8 @@ class LogController extends Controller
     public function powerApi(Request $request)
     {
         try {
-            $sampleSeconds = 5.0;
+            $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
+
             $limit = (int) $request->input('limit', 100);
             $limit = max(1, min($limit, 500));
 
@@ -335,7 +360,7 @@ class LogController extends Controller
                 $currentA = $currentMa / 1000.0;
                 $voltageV = $this->estimatedVoltage($device, $row->timestamp ?? $row->created_at);
                 $powerW = $voltageV * $currentA;
-                $deltaWh = $powerW * ($sampleSeconds / 3600.0);
+                $deltaWh = $powerW * ($intervalSeconds / 3600.0);
 
                 $energyByDevice[$device] = ($energyByDevice[$device] ?? 0.0) + $deltaWh;
 
@@ -345,6 +370,7 @@ class LogController extends Controller
                     'power_w' => round($powerW, 3),
                     'watt_hour' => round($deltaWh, 5),
                     'watt_hour_cumulative' => round($energyByDevice[$device], 5),
+                    'interval_detik' => $intervalSeconds,
                 ]);
             }
 
@@ -354,6 +380,7 @@ class LogController extends Controller
 
             return Response::json([
                 'rows' => $rows,
+                'interval_detik' => $intervalSeconds,
                 'generated_at' => now()->toDateTimeString(),
             ]);
         } catch (\Throwable $e) {

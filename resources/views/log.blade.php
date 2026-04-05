@@ -162,7 +162,7 @@
                 <div class="text-sm text-gray-500">Riwayat realtime estimasi daya.</div>
             </div>
             <a href="{{ route('log.power.export') }}"
-                class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg shadow-sm transition">
+                class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg shadow-sm transition text-center">
                 Download CSV Power
             </a>
         </div>
@@ -363,6 +363,7 @@
     async function fetchPowerLogs() {
         try {
             const device = document.getElementById('filter-device')?.value || '';
+
             const params = new URLSearchParams();
             params.append('limit', '120');
             if (device) params.append('device', device);
