@@ -5,8 +5,15 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "mqtt:start": "node ingest-mqtt.js",
-        "mqtt:node": "node node-subscriber.js"
+        "mqtt:start": "php artisan mqtt:subscribe",
+        "mqtt:node": "node node-subscriber.js",
+        "start:all": "concurrently -n web,vite,mqtt -c green,blue,yellow \"php artisan serve\" \"npm run dev\" \"php artisan mqtt:subscribe\"",
+        "prod:mqtt:up": "pm2 start ecosystem.config.cjs --only hidroponik-mqtt --update-env",
+        "prod:mqtt:restart": "pm2 restart hidroponik-mqtt --update-env",
+        "prod:mqtt:logs": "pm2 logs hidroponik-mqtt",
+        "prod:mqtt:down": "pm2 stop hidroponik-mqtt",
+        "prod:mqtt:delete": "pm2 delete hidroponik-mqtt",
+        "prod:mqtt:save": "pm2 save"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

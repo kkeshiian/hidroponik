@@ -173,12 +173,14 @@
                     <tr class="text-sm font-semibold text-gray-700">
                         <th class="py-3 px-3">Waktu</th>
                         <th class="py-3 px-3">Perangkat</th>
-                        <th class="py-3 px-3">Current (mA)</th>
+                        <th class="py-3 px-3">Current (A)</th>
+                        <th class="py-3 px-3">Voltage (V)</th>
+                        <th class="py-3 px-3">Watt-hour (Wh)</th>
                     </tr>
                 </thead>
                 <tbody id="power-log-rows" class="text-sm text-gray-700">
                     <tr>
-                        <td colspan="3" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td>
+                        <td colspan="5" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td>
                     </tr>
                 </tbody>
             </table>
@@ -192,22 +194,54 @@
 (() => {
     const intervalMs = 5000;
     let currentPage = 1;
+
+    function formatPowerTimestamp(value, createdAt = null) {
+        const parsed = value ? new Date(value) : null;
+        const created = createdAt ? new Date(createdAt) : null;
+
+        const hasParsed = parsed && !Number.isNaN(parsed.getTime());
+        const hasCreated = created && !Number.isNaN(created.getTime());
+
+        // Data lama sempat tersimpan dengan offset timezone. Jika beda jauh,
+        // fallback ke created_at karena itu konsisten dengan waktu insert server.
+        let effective = hasParsed ? parsed : null;
+        if (hasParsed && hasCreated) {
+            const diffHours = Math.abs(created.getTime() - parsed.getTime()) / 3600000;
+            if (diffHours >= 4) {
+                effective = created;
+            }
+        } else if (!hasParsed && hasCreated) {
+            effective = created;
+        }
+
+        if (effective) {
+            return effective.toLocaleString('sv-SE', {
+                timeZone: 'Asia/Singapore',
+                hour12: false,
+            }).replace(',', '');
+        }
+
+        return (value ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+    }
+
     function renderPowerRows(rows) {
         const tbody = document.getElementById('power-log-rows');
         if (!tbody) return;
 
         if (!rows || !rows.length) {
-            tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td></tr>';
             return;
         }
 
         let html = '';
         rows.forEach((r) => {
-            let datetime = (r.timestamp ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+            const datetime = formatPowerTimestamp(r.timestamp ?? '', r.created_at ?? null);
             html += `<tr class="border-b border-gray-100 hover:bg-slate-50 transition">` +
                 `<td class="py-2 px-3">${datetime}</td>` +
                 `<td class="py-2 px-3">${r.device_name ?? ''}</td>` +
-                `<td class="py-2 px-3">${Number(r.current_ma ?? 0).toFixed(2)}</td>` +
+                `<td class="py-2 px-3">${Number(r.current_a ?? ((Number(r.current_ma ?? 0)) / 1000)).toFixed(4)}</td>` +
+                `<td class="py-2 px-3">${Number(r.voltage_v ?? 0).toFixed(2)}</td>` +
+                `<td class="py-2 px-3">${Number(r.watt_hour_cumulative ?? r.watt_hour ?? 0).toFixed(5)}</td>` +
             `</tr>`;
         });
 
