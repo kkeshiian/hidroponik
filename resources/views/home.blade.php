@@ -200,6 +200,15 @@ function setHomeMode(kebun, mode) {
     if (mode === 'mode_auto') {
         el.textContent = 'MODE_AUTO';
         el.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+
+        // Permintaan UX: saat Kebun A AUTO, Kebun B ikut AUTO.
+        if (normalized === 'kebun-a') {
+            const mirrorEl = document.getElementById('kebun-b-mode');
+            if (mirrorEl) {
+                mirrorEl.textContent = 'MODE_AUTO';
+                mirrorEl.className = 'text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
+            }
+        }
         return;
     }
 

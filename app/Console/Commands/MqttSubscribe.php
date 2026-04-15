@@ -149,6 +149,9 @@ class MqttSubscribe extends Command
             'topic' => $topic,
             'kebun' => $kebun,
             'qos' => $qos,
+            'mode' => $data['mode'] ?? null,
+            'device_mode' => $data['device_mode'] ?? null,
+            'current_mode' => $data['current_mode'] ?? null,
             'suhu' => $data['suhu'] ?? null,
             'ph' => $data['ph'] ?? null,
             'tds' => $data['tds'] ?? null,
@@ -177,11 +180,18 @@ class MqttSubscribe extends Command
         if ($mirrorKebun !== null) {
             $mirroredRawPayload = $rawPayload;
             $mirroredRawPayload['kebun'] = $mirrorKebun;
+            $mirroredRawPayload['ph'] = $this->withMirroredValueOffset($rawPayload['ph'] ?? null, 1.2, 3.2, 0.0, 14.0, 2);
+            $mirroredRawPayload['suhu'] = $this->withMirroredValueOffset($rawPayload['suhu'] ?? null, 1.2, 3.2, 0.0, null, 2);
             $mirroredRawPayload['tds'] = $this->withMirroredTdsOffset($rawPayload['tds'] ?? null);
             $mirroredRawPayload['tds_mentah'] = $mirroredRawPayload['tds'];
 
             if (is_array($mirroredRawPayload['raw'] ?? null)) {
                 $mirroredRawPayload['raw']['kebun'] = $mirrorKebun;
+                $mirroredRawPayload['raw']['mode'] = $mirroredRawPayload['mode'] ?? ($rawPayload['mode'] ?? null);
+                $mirroredRawPayload['raw']['device_mode'] = $mirroredRawPayload['device_mode'] ?? ($rawPayload['device_mode'] ?? null);
+                $mirroredRawPayload['raw']['current_mode'] = $mirroredRawPayload['current_mode'] ?? ($rawPayload['current_mode'] ?? null);
+                $mirroredRawPayload['raw']['ph'] = $mirroredRawPayload['ph'];
+                $mirroredRawPayload['raw']['suhu'] = $mirroredRawPayload['suhu'];
                 $mirroredRawPayload['raw']['tds'] = $mirroredRawPayload['tds'];
                 $mirroredRawPayload['raw']['mirrored_from'] = $kebun;
             }
@@ -209,7 +219,7 @@ class MqttSubscribe extends Command
         $device = strtolower(trim($kebun));
 
         if (in_array($device, ['kebun-1', 'kebun-a', 'a'], true)) {
-            return $device === 'kebun-a' ? 'kebun-b' : 'kebun-2';
+            return 'kebun-b';
         }
 
         return null;
@@ -222,11 +232,38 @@ class MqttSubscribe extends Command
         }
 
         $base = (float) $tds;
-        $offset = random_int(47, 112);
+        $offset = random_int(96, 165);
         $sign = random_int(0, 1) === 0 ? -1 : 1;
         $value = $base + ($sign * $offset);
 
         return max(0, $value);
+    }
+
+    protected function withMirroredValueOffset(
+        mixed $value,
+        float $minOffset,
+        float $maxOffset,
+        ?float $minAllowed = null,
+        ?float $maxAllowed = null,
+        int $precision = 2
+    ): ?float {
+        if ($value === null || !is_numeric($value)) {
+            return null;
+        }
+
+        $base = (float) $value;
+        $offset = $this->randomFloat($minOffset, $maxOffset);
+        $sign = random_int(0, 1) === 0 ? -1 : 1;
+        $result = $base + ($sign * $offset);
+
+        if ($minAllowed !== null) {
+            $result = max($minAllowed, $result);
+        }
+        if ($maxAllowed !== null) {
+            $result = min($maxAllowed, $result);
+        }
+
+        return round($result, $precision);
     }
 
     
