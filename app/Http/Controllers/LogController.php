@@ -295,22 +295,40 @@ class LogController extends Controller
 
         $callback = function () use ($request) {
             $handle = fopen('php://output', 'w');
-            // header
-            fputcsv($handle, ['Waktu', 'Perangkat', 'pH', 'TDS', 'Suhu', 'Cal pH Asam', 'Cal pH Netral', 'Cal TDS K']);
+            // Header mengikuti kolom di tabel Data History.
+            fputcsv($handle, ['Tanggal', 'Waktu', 'Perangkat', 'pH', 'TDS (ppm)', 'Suhu (°C)']);
 
             try {
                 $query = Telemetry::query()->orderBy('recorded_at', 'desc');
                 $query->chunk(200, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
+                        $recordedAt = $r->recorded_at;
+                        $createdAt = $r->created_at;
+
+                        $effectiveAt = $recordedAt;
+                        if ($recordedAt && $createdAt) {
+                            $diffHours = abs($createdAt->diffInHours($recordedAt, false));
+                            if ($diffHours >= 4) {
+                                $effectiveAt = $createdAt;
+                            }
+                        } elseif (!$effectiveAt && $createdAt) {
+                            $effectiveAt = $createdAt;
+                        }
+
+                        $localDate = '';
+                        $localTime = '';
+                        if ($effectiveAt) {
+                            $localDate = $effectiveAt->copy()->timezone(config('app.timezone'))->format('Y-m-d');
+                            $localTime = $effectiveAt->copy()->timezone(config('app.timezone'))->format('H:i:s');
+                        }
+
                         fputcsv($handle, [
-                            $r->recorded_at,
+                            $localDate,
+                            $localTime,
                             $r->kebun,
                             $r->ph,
                             $r->tds,
                             $r->suhu,
-                            $r->cal_ph_asam,
-                            $r->cal_ph_netral,
-                            $r->cal_tds_k,
                         ]);
                     }
                 });

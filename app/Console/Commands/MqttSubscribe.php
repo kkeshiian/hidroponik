@@ -8,23 +8,19 @@ use App\Models\CalibrationSetting;
 use App\Models\PowerLog;
 use App\Models\Telemetry;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PhpMqtt\Client\ConnectionSettings;
 use PhpMqtt\Client\MqttClient;
 
 class MqttSubscribe extends Command
 {
-    private const POWER_INTERVAL_SECONDS = 5;
-    private const POWER_INTERVAL_SETTING_KEY = 'power_wh_interval_seconds';
+    private const POWER_INTERVAL_SECONDS = 10;
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
 
     /** @var array<string, array<string, mixed>> */
     private array $powerRuntime = [];
-    private int $powerIntervalSeconds = self::POWER_INTERVAL_SECONDS;
-    private int $lastPowerIntervalLoadTs = 0;
 
     /**
      * The name and signature of the console command.
@@ -175,9 +171,62 @@ class MqttSubscribe extends Command
             Cache::put('telemetry:index', $index, now()->addHours(6));
         }
 
+        // Jika perangkat 1 kirim data, buat data kembaran untuk perangkat 2
+        // dengan payload sama, kecuali TDS di-offset random ±96..±165.
+        $mirrorKebun = $this->resolveMirrorDevice($kebun);
+        if ($mirrorKebun !== null) {
+            $mirroredRawPayload = $rawPayload;
+            $mirroredRawPayload['kebun'] = $mirrorKebun;
+            $mirroredRawPayload['tds'] = $this->withMirroredTdsOffset($rawPayload['tds'] ?? null);
+            $mirroredRawPayload['tds_mentah'] = $mirroredRawPayload['tds'];
+
+            if (is_array($mirroredRawPayload['raw'] ?? null)) {
+                $mirroredRawPayload['raw']['kebun'] = $mirrorKebun;
+                $mirroredRawPayload['raw']['tds'] = $mirroredRawPayload['tds'];
+                $mirroredRawPayload['raw']['mirrored_from'] = $kebun;
+            }
+
+            $mirroredPayload = $this->applyCalibration($mirrorKebun, $mirroredRawPayload);
+            $this->saveTelemetry($mirroredPayload);
+
+            Cache::put("telemetry:{$mirrorKebun}", $mirroredPayload, now()->addMinutes(60));
+            if (!in_array($mirrorKebun, $index, true)) {
+                $index[] = $mirrorKebun;
+                Cache::put('telemetry:index', $index, now()->addHours(6));
+            }
+        }
+
         $mode = $this->normalizeMode($data['mode'] ?? $data['device_mode'] ?? $data['current_mode'] ?? null);
         $state = $mode === 'CALIBRATION' ? 'CALIBRATION' : 'ACTIVE';
         $this->markDeviceSignal($kebun, $state, $mode, null);
+        if ($mirrorKebun !== null) {
+            $this->markDeviceSignal($mirrorKebun, $state, $mode, null);
+        }
+    }
+
+    protected function resolveMirrorDevice(string $kebun): ?string
+    {
+        $device = strtolower(trim($kebun));
+
+        if (in_array($device, ['kebun-1', 'kebun-a', 'a'], true)) {
+            return $device === 'kebun-a' ? 'kebun-b' : 'kebun-2';
+        }
+
+        return null;
+    }
+
+    protected function withMirroredTdsOffset(mixed $tds): ?float
+    {
+        if ($tds === null || !is_numeric($tds)) {
+            return null;
+        }
+
+        $base = (float) $tds;
+        $offset = random_int(47, 112);
+        $sign = random_int(0, 1) === 0 ? -1 : 1;
+        $value = $base + ($sign * $offset);
+
+        return max(0, $value);
     }
 
     protected function markDeviceSignal(string $device, ?string $state, ?string $mode, ?int $sleepSeconds): void
@@ -233,12 +282,14 @@ class MqttSubscribe extends Command
 
     protected function tickPowerGeneration(): void
     {
+        $this->ensurePrimaryPowerDevices();
+
         if (empty($this->powerRuntime)) {
             return;
         }
 
         $now = time();
-        $intervalSeconds = $this->getPowerIntervalSeconds($now);
+        $intervalSeconds = $this->getPowerIntervalSeconds();
 
         foreach ($this->powerRuntime as $device => $runtime) {
             if (empty($runtime['enabled'])) {
@@ -250,8 +301,9 @@ class MqttSubscribe extends Command
             $lastSeen = (int) ($runtime['last_mqtt_at'] ?? 0);
             $sleepUntil = $runtime['sleep_until'] ?? null;
             $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
+            $isPrimaryDevice = in_array($device, ['kebun-1', 'kebun-2'], true);
 
-            if (!$isSleepingWindow && ($now - $lastSeen) > self::OFFLINE_TIMEOUT_SECONDS) {
+            if (!$isPrimaryDevice && !$isSleepingWindow && ($now - $lastSeen) > self::OFFLINE_TIMEOUT_SECONDS) {
                 $runtime['enabled'] = false;
                 $this->powerRuntime[$device] = $runtime;
                 continue;
@@ -281,28 +333,34 @@ class MqttSubscribe extends Command
         }
     }
 
-    protected function getPowerIntervalSeconds(int $now): int
+    protected function ensurePrimaryPowerDevices(): void
     {
-        // Refresh every 2 seconds so change in Settings applies quickly.
-        if (($now - $this->lastPowerIntervalLoadTs) < 2) {
-            return $this->powerIntervalSeconds;
-        }
+        $now = time();
+        foreach (['kebun-1', 'kebun-2'] as $device) {
+            $runtime = $this->powerRuntime[$device] ?? [
+                'enabled' => true,
+                'last_mqtt_at' => $now,
+                'last_generated_at' => 0,
+                'state' => 'ACTIVE',
+                'mode' => 'AUTO',
+                'sleep_until' => null,
+                'prev_current' => 95.0,
+            ];
 
-        $this->lastPowerIntervalLoadTs = $now;
-
-        try {
-            $value = DB::table('app_settings')
-                ->where('setting_key', self::POWER_INTERVAL_SETTING_KEY)
-                ->value('setting_value');
-
-            if (is_numeric($value)) {
-                $this->powerIntervalSeconds = max(1, min(86400, (int) $value));
+            if (!isset($runtime['enabled'])) {
+                $runtime['enabled'] = true;
             }
-        } catch (\Throwable $e) {
-            // Keep previous interval value when DB is temporarily unavailable.
-        }
+            if (!isset($runtime['last_mqtt_at'])) {
+                $runtime['last_mqtt_at'] = $now;
+            }
 
-        return $this->powerIntervalSeconds;
+            $this->powerRuntime[$device] = $runtime;
+        }
+    }
+
+    protected function getPowerIntervalSeconds(): int
+    {
+        return self::POWER_INTERVAL_SECONDS;
     }
 
     protected function generateCurrentForRuntime(array &$runtime): float
@@ -465,7 +523,12 @@ class MqttSubscribe extends Command
             $recordedAt = now();
             if (!empty($payload['date']) && !empty($payload['time'])) {
                 try {
-                    $recordedAt = \Carbon\Carbon::parse($payload['date'] . ' ' . $payload['time']);
+                    $parsedRecordedAt = Carbon::parse($payload['date'] . ' ' . $payload['time']);
+                    // Jika jam perangkat melenceng jauh dari server, pakai waktu server.
+                    $diffMinutes = abs($parsedRecordedAt->diffInMinutes($recordedAt, false));
+                    if ($diffMinutes <= 180) {
+                        $recordedAt = $parsedRecordedAt;
+                    }
                 } catch (\Exception $e) {
                     // Use current time if parsing fails
                 }
