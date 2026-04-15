@@ -229,6 +229,8 @@ class MqttSubscribe extends Command
         return max(0, $value);
     }
 
+    
+
     protected function markDeviceSignal(string $device, ?string $state, ?string $mode, ?int $sleepSeconds): void
     {
         $now = time();
