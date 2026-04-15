@@ -195,6 +195,34 @@
     const intervalMs = 5000;
     let currentPage = 1;
 
+    function formatTelemetryTimestamp(value, createdAt = null) {
+        const parsed = value ? new Date(value) : null;
+        const created = createdAt ? new Date(createdAt) : null;
+
+        const hasParsed = parsed && !Number.isNaN(parsed.getTime());
+        const hasCreated = created && !Number.isNaN(created.getTime());
+
+        // Gunakan created_at bila recorded_at tidak valid atau meleset jauh.
+        let effective = hasParsed ? parsed : null;
+        if (hasParsed && hasCreated) {
+            const diffHours = Math.abs(created.getTime() - parsed.getTime()) / 3600000;
+            if (diffHours >= 4) {
+                effective = created;
+            }
+        } else if (!hasParsed && hasCreated) {
+            effective = created;
+        }
+
+        if (effective) {
+            return effective.toLocaleString('sv-SE', {
+                timeZone: 'Asia/Jakarta',
+                hour12: false,
+            }).replace(',', '');
+        }
+
+        return (value ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+    }
+
     function formatPowerTimestamp(value, createdAt = null) {
         const parsed = value ? new Date(value) : null;
         const created = createdAt ? new Date(createdAt) : null;
@@ -216,7 +244,7 @@
 
         if (effective) {
             return effective.toLocaleString('sv-SE', {
-                timeZone: 'Asia/Singapore',
+                timeZone: 'Asia/Jakarta',
                 hour12: false,
             }).replace(',', '');
         }
@@ -264,9 +292,7 @@
         let html = '';
         if (data.rows && data.rows.length) {
             data.rows.forEach(r => {
-                let datetime = (r.recorded_at ?? '');
-                // Remove microseconds and timezone, replace T with space
-                datetime = datetime.replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
+                const datetime = formatTelemetryTimestamp(r.recorded_at ?? '', r.created_at ?? null);
                 const parts = datetime.split(' ');
                 const date = parts[0] ?? '';
                 const time = parts[1] ?? '';
