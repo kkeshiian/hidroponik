@@ -165,7 +165,7 @@ function formatNumber(v, decimals = 1) {
 
 function formatTds(v) {
     const n = toNumber(v);
-    return n === null ? '--' : String(Math.trunc(n));
+    return n === null ? '--' : String(Math.round(n));
 }
 
 function parseModeFromAny(payloadOrStatus) {
@@ -325,8 +325,8 @@ async function fetchTelemetry() {
 
 // Initial load
 fetchHistory().then(() => {
-    // start polling every 2s after history is loaded
-    setInterval(fetchTelemetry, 1000);
+    // Poll every 5 seconds so cards/charts follow processed backend telemetry cadence.
+    setInterval(fetchTelemetry, 5000);
     fetchTelemetry();
 });
 </script>
@@ -380,26 +380,10 @@ fetchHistory().then(() => {
                     return;
                 }
 
-                const payload = JSON.parse(message.toString());
-
-                // map kebun to element ids (kebun-a -> kebun-a-ph etc)
-                const phEl = document.getElementById(`${kebun}-ph`);
-                const tdsEl = document.getElementById(`${kebun}-tds`);
-                const suhuEl = document.getElementById(`${kebun}-suhu`);
-
-                if (phEl) phEl.innerText = payload.ph != null ? formatNumber(payload.ph, 1) : phEl.innerText;
-                if (tdsEl) tdsEl.innerText = payload.tds != null ? formatTds(payload.tds) : tdsEl.innerText;
-                const suhuValue = getSuhu(payload);
-                if (suhuEl) suhuEl.innerText = suhuValue != null ? formatNumber(suhuValue, 1) : suhuEl.innerText;
-                const modeFromPayload = parseModeFromAny(payload);
-                if (modeFromPayload) {
-                    setHomeMode(kebun, modeFromPayload);
-                }
-                lastRealtimeUpdate[kebun] = Date.now();
-
-                // update chart
-                if (typeof updateChartFromPayload === 'function') {
-                    updateChartFromPayload(kebun, payload);
+                // Publish payload sengaja tidak dirender langsung agar data selalu melalui
+                // olahan backend subscriber terlebih dahulu.
+                if (kind === 'publish') {
+                    return;
                 }
             } catch (e) {
                 console.error('Invalid MQTT message', e);
