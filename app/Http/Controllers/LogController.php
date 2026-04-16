@@ -269,14 +269,14 @@ class LogController extends Controller
     public function history()
     {
         // Get last 15 records for each kebun for charts
-        $kebunA = Telemetry::where('kebun', 'kebun-a')
+        $kebunA = Telemetry::whereIn('kebun', ['kebun-a', 'kebun-1', 'a'])
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
             ->reverse()
             ->values();
 
-        $kebunB = Telemetry::where('kebun', 'kebun-b')
+        $kebunB = Telemetry::whereIn('kebun', ['kebun-b', 'kebun-2', 'b'])
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
