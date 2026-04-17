@@ -30,7 +30,7 @@ class MqttSubscribe extends Command
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
     private const TELEMETRY_MIN_GAP_SECONDS = 58;
-    private const TELEMETRY_MIN_TDS = 354.0;
+    private const TELEMETRY_MIN_TDS = 265.0;
     private const PH_MIN = 5.0;
     private const PH_MAX = 8.0;
 
@@ -200,8 +200,9 @@ class MqttSubscribe extends Command
             Cache::put('telemetry:index', $index, now()->addHours(6));
         }
 
-        // Jika perangkat 1 kirim data, buat data kembaran untuk perangkat 2
-        // dengan payload sama, kecuali TDS di-offset random ±96..±165.
+        // Jika kebun-1/kebun-a kirim data, buat kembaran ke kebun-2.
+        // Jika kebun-2/kebun-b kirim data, buat kembaran ke kebun-1.
+        // Payload sama, kecuali TDS dan beberapa nilai dibuat offset realistis.
         $mirrorKebun = $this->resolveMirrorDevice($kebun);
         if ($mirrorKebun !== null) {
             $mirroredRawPayload = $rawPayload;
@@ -548,6 +549,10 @@ class MqttSubscribe extends Command
 
         if (in_array($device, ['kebun-1', 'kebun-a', 'a'], true)) {
             return 'kebun-2';
+        }
+
+        if (in_array($device, ['kebun-2', 'kebun-b', 'b'], true)) {
+            return 'kebun-1';
         }
 
         return null;
