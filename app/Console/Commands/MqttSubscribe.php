@@ -168,10 +168,29 @@ class MqttSubscribe extends Command
     protected function saveTelemetry(array $payload): void
     {
         try {
-            $recordedAt = now();
+            $serverNow = now();
+            $recordedAt = $serverNow->copy();
+            $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
+
             if (!empty($payload['date']) && !empty($payload['time'])) {
                 try {
-                    $recordedAt = \Carbon\Carbon::parse($payload['date'] . ' ' . $payload['time']);
+                    $deviceRecordedAt = \Carbon\Carbon::parse(
+                        $payload['date'] . ' ' . $payload['time'],
+                        config('app.timezone')
+                    );
+
+                    if ($deviceRecordedAt->greaterThan($serverNow->copy()->addMinutes($maxFutureMinutes))) {
+                        Log::warning('Telemetry skipped: future device timestamp detected', [
+                            'kebun' => $payload['kebun'] ?? null,
+                            'device_time' => $deviceRecordedAt->toDateTimeString(),
+                            'server_time' => $serverNow->toDateTimeString(),
+                            'tds' => $payload['tds'] ?? null,
+                        ]);
+                        echo "Skipped save: future device timestamp ({$deviceRecordedAt->toDateTimeString()})\n";
+                        return;
+                    }
+
+                    $recordedAt = $deviceRecordedAt;
                 } catch (\Exception $e) {
                     // Use current time if parsing fails
                 }

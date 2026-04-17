@@ -11,10 +11,17 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LogController extends Controller
 {
+    private function latestAllowedRecordedAt()
+    {
+        $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
+        return now()->addMinutes($maxFutureMinutes);
+    }
+
     public function index(Request $request)
     {
         try {
-            $query = Telemetry::query();
+            $query = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
 
             // filters (optional)
             if ($request->filled('kebun')) {
@@ -60,7 +67,8 @@ class LogController extends Controller
     public function api(Request $request)
     {
         try {
-            $query = Telemetry::query();
+            $query = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             
             // Apply filters
             if ($request->filled('kebun')) {
@@ -136,7 +144,8 @@ class LogController extends Controller
             $rows = $query->orderBy('recorded_at', 'desc')->skip($skip)->take($perPage)->get();
             
             // Calculate stats on filtered data
-            $statsQuery = Telemetry::query();
+            $statsQuery = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             if ($request->filled('kebun')) {
                 $statsQuery->where('kebun', $request->input('kebun'));
             }
@@ -191,6 +200,7 @@ class LogController extends Controller
     {
         // Get last 15 records for each kebun for charts
         $kebunA = Telemetry::where('kebun', 'kebun-a')
+            ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
@@ -198,6 +208,7 @@ class LogController extends Controller
             ->values();
 
         $kebunB = Telemetry::where('kebun', 'kebun-b')
+            ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
@@ -220,7 +231,9 @@ class LogController extends Controller
             fputcsv($handle, ['Waktu', 'Perangkat', 'pH', 'TDS', 'Suhu', 'Cal pH Asam', 'Cal pH Netral', 'Cal TDS K']);
 
             try {
-                $query = Telemetry::query()->orderBy('recorded_at', 'desc');
+                $query = Telemetry::query()
+                    ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
+                    ->orderBy('recorded_at', 'desc');
                 $query->chunk(200, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
                         fputcsv($handle, [
