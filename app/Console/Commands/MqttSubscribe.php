@@ -40,7 +40,7 @@ class MqttSubscribe extends Command
     /** @var array<string, array<string, mixed>> */
     private array $ppmRuntime = [];
 
-    /** @var array<string, array{last_saved_at: Carbon, last_tds: float|null, stable_lock_until?: Carbon|null}> */
+    /** @var array<string, array{last_saved_at: Carbon, last_server_saved_at?: Carbon|null, last_tds: float|null, stable_lock_until?: Carbon|null}> */
     private array $telemetryRateRuntime = [];
 
     /** @var array<string, array{value: float, at: Carbon}> */
@@ -822,7 +822,7 @@ class MqttSubscribe extends Command
         return false;
     }
 
-    protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $recordedAt, mixed $tds): bool
+    protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $serverNow, mixed $tds): bool
     {
         if (!is_numeric($tds) || (float) $tds <= self::TELEMETRY_MIN_TDS) {
             return false;
@@ -834,9 +834,9 @@ class MqttSubscribe extends Command
 
         $runtime = $this->telemetryRateRuntime[$kebun] ?? null;
         if (is_array($runtime)) {
-            $lastSavedAt = $runtime['last_saved_at'] ?? null;
+            $lastSavedAt = $runtime['last_server_saved_at'] ?? null;
             if ($lastSavedAt instanceof Carbon) {
-                $elapsedSeconds = $lastSavedAt->diffInSeconds($recordedAt, false);
+                $elapsedSeconds = $lastSavedAt->diffInSeconds($serverNow, false);
                 if ($elapsedSeconds < self::TELEMETRY_MIN_GAP_SECONDS) {
                     return false;
                 }
@@ -845,14 +845,14 @@ class MqttSubscribe extends Command
 
         $lastSavedFromDb = Telemetry::query()
             ->where('kebun', $kebun)
-            ->latest('recorded_at')
-            ->first(['recorded_at']);
+            ->latest('created_at')
+            ->first(['created_at']);
 
-        if ($lastSavedFromDb === null || $lastSavedFromDb->recorded_at === null) {
+        if ($lastSavedFromDb === null || $lastSavedFromDb->created_at === null) {
             return true;
         }
 
-        $elapsedSinceDb = $lastSavedFromDb->recorded_at->diffInSeconds($recordedAt, false);
+        $elapsedSinceDb = $lastSavedFromDb->created_at->diffInSeconds($serverNow, false);
         if ($elapsedSinceDb < self::TELEMETRY_MIN_GAP_SECONDS) {
             return false;
         }
@@ -873,7 +873,7 @@ class MqttSubscribe extends Command
         return 600;
     }
 
-    protected function markTelemetrySaved(?string $kebun, Carbon $recordedAt, mixed $tds): void
+    protected function markTelemetrySaved(?string $kebun, Carbon $recordedAt, Carbon $serverNow, mixed $tds): void
     {
         if ($kebun === null) {
             return;
@@ -892,6 +892,7 @@ class MqttSubscribe extends Command
 
         $this->telemetryRateRuntime[$kebun] = [
             'last_saved_at' => $recordedAt->copy(),
+            'last_server_saved_at' => $serverNow->copy(),
             'last_tds' => $currentTds,
             'stable_lock_until' => $isStableCategory ? $recordedAt->copy()->addSeconds(600) : null,
         ];
@@ -1094,10 +1095,12 @@ class MqttSubscribe extends Command
             // Normalize to second precision so duplicate payloads in the same second are ignored.
             $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
             $kebun = $payload['kebun'] ?? null;
+            $serverGateAt = Carbon::parse($serverNow->format('Y-m-d H:i:s'));
 
-            if (!$this->shouldSaveTelemetryByTdsRule($kebun, $recordedAt, $payload['tds'] ?? null)) {
+            if (!$this->shouldSaveTelemetryByTdsRule($kebun, $serverGateAt, $payload['tds'] ?? null)) {
                 Log::info('Telemetry skipped by TDS/interval rule', [
                     'kebun' => $kebun,
+                    'server_now' => $serverGateAt->toDateTimeString(),
                     'recorded_at' => $recordedAt->toDateTimeString(),
                     'tds' => $payload['tds'] ?? null,
                     'min_tds_required' => self::TELEMETRY_MIN_TDS,
@@ -1124,7 +1127,7 @@ class MqttSubscribe extends Command
             );
 
             if ($created->wasRecentlyCreated) {
-                $this->markTelemetrySaved($kebun, $recordedAt, $payload['tds'] ?? null);
+                $this->markTelemetrySaved($kebun, $recordedAt, $serverGateAt, $payload['tds'] ?? null);
                 Log::info('Telemetry saved', ['id' => $created->id ?? null]);
                 return;
             }
