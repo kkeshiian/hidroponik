@@ -550,7 +550,7 @@ class MqttSubscribe extends Command
         }
 
         $base = (float) $tds;
-        $offset = random_int(56, 96);
+        $offset = random_int(36, 46);
         $sign = random_int(0, 1) === 0 ? -1 : 1;
         $value = $base + ($sign * $offset);
 
