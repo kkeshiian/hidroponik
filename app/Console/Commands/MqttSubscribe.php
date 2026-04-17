@@ -169,15 +169,18 @@ class MqttSubscribe extends Command
             return;
         }
 
+        // Normalize kebun value to standardized name (kebun-a or kebun-b)
+        $normalizedKebun = $this->normalizeKebun($kebun);
+
         $rawPayload = [
             'topic' => $topic,
-            'kebun' => $kebun,
+            'kebun' => $normalizedKebun,
             'qos' => $qos,
             'mode' => $data['mode'] ?? null,
             'device_mode' => $data['device_mode'] ?? null,
             'current_mode' => $data['current_mode'] ?? null,
             'suhu' => $data['suhu'] ?? null,
-            'ph' => $this->normalizePhValue($kebun, $data['ph'] ?? null),
+            'ph' => $this->normalizePhValue($normalizedKebun, $data['ph'] ?? null),
             'tds' => $data['tds'] ?? null,
             'cal_ph_netral' => $data['cal_ph_netral'] ?? null,
             'cal_ph_asam' => $data['cal_ph_asam'] ?? null,
@@ -188,22 +191,22 @@ class MqttSubscribe extends Command
             'raw' => $data,
         ];
 
-        $rawPayload = $this->applySimulatedPpmIfNeeded($kebun, $rawPayload);
+        $rawPayload = $this->applySimulatedPpmIfNeeded($normalizedKebun, $rawPayload);
 
-        $calibratedPayload = $this->applyCalibration($kebun, $rawPayload);
+        $calibratedPayload = $this->applyCalibration($normalizedKebun, $rawPayload);
         $this->saveTelemetry($calibratedPayload);
 
-        Cache::put("telemetry:{$kebun}", $calibratedPayload, now()->addMinutes(60));
+        Cache::put("telemetry:{$normalizedKebun}", $calibratedPayload, now()->addMinutes(60));
         $index = Cache::get('telemetry:index', []);
-        if (!in_array($kebun, $index, true)) {
-            $index[] = $kebun;
+        if (!in_array($normalizedKebun, $index, true)) {
+            $index[] = $normalizedKebun;
             Cache::put('telemetry:index', $index, now()->addHours(6));
         }
 
-        // Jika kebun-1/kebun-a kirim data, buat kembaran ke kebun-2.
-        // Jika kebun-2/kebun-b kirim data, buat kembaran ke kebun-1.
+        // Jika kebun-a kirim data, buat kembaran ke kebun-b.
+        // Jika kebun-b kirim data, buat kembaran ke kebun-a.
         // Payload sama, kecuali TDS dan beberapa nilai dibuat offset realistis.
-        $mirrorKebun = $this->resolveMirrorDevice($kebun);
+        $mirrorKebun = $this->resolveMirrorDevice($normalizedKebun);
         if ($mirrorKebun !== null) {
             $mirroredRawPayload = $rawPayload;
             $mirroredRawPayload['kebun'] = $mirrorKebun;
@@ -238,7 +241,7 @@ class MqttSubscribe extends Command
 
         $mode = $this->normalizeMode($data['mode'] ?? $data['device_mode'] ?? $data['current_mode'] ?? null);
         $state = $mode === 'CALIBRATION' ? 'CALIBRATION' : 'ACTIVE';
-        $this->markDeviceSignal($kebun, $state, $mode, null);
+        $this->markDeviceSignal($normalizedKebun, $state, $mode, null);
         if ($mirrorKebun !== null) {
             $this->markDeviceSignal($mirrorKebun, $state, $mode, null);
         }
@@ -548,11 +551,11 @@ class MqttSubscribe extends Command
         $device = strtolower(trim($kebun));
 
         if (in_array($device, ['kebun-1', 'kebun-a', 'a'], true)) {
-            return 'kebun-2';
+            return 'kebun-b';
         }
 
         if (in_array($device, ['kebun-2', 'kebun-b', 'b'], true)) {
-            return 'kebun-1';
+            return 'kebun-a';
         }
 
         return null;
@@ -994,6 +997,27 @@ class MqttSubscribe extends Command
         }
 
         return null;
+    }
+
+    /**
+     * Normalize kebun name to standardized form (kebun-a or kebun-b).
+     * kebun-1, kebun-a, a -> kebun-a
+     * kebun-2, kebun-b, b -> kebun-b
+     */
+    protected function normalizeKebun(string $kebun): string
+    {
+        $value = strtolower(trim($kebun));
+
+        if (in_array($value, ['kebun-1', 'kebun-a', 'a'], true)) {
+            return 'kebun-a';
+        }
+
+        if (in_array($value, ['kebun-2', 'kebun-b', 'b'], true)) {
+            return 'kebun-b';
+        }
+
+        // Unknown kebun, return normalized format anyway
+        return strtolower($kebun);
     }
 
     protected function resolveSleepSeconds(array $payload): int
