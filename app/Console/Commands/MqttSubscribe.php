@@ -15,7 +15,8 @@ use PhpMqtt\Client\MqttClient;
 
 class MqttSubscribe extends Command
 {
-    private const POWER_INTERVAL_SECONDS = 10;
+    private const POWER_INTERVAL_ACTIVE_SECONDS = 10;
+    private const POWER_INTERVAL_SLEEP_SECONDS = 60;
     private const PPM_INTERVAL_SECONDS = 5;
     private const PPM_START_HOUR_WITA = 21;
     private const PPM_REFILL_HOUR_WITA = 6;
@@ -35,6 +36,9 @@ class MqttSubscribe extends Command
 
     /** @var array<string, array<string, mixed>> */
     private array $ppmRuntime = [];
+
+    /** @var array<string, array{last_saved_at: Carbon, last_tds: float|null}> */
+    private array $telemetryRateRuntime = [];
 
     /**
      * The name and signature of the console command.
@@ -643,8 +647,6 @@ class MqttSubscribe extends Command
         }
 
         $now = time();
-        $intervalSeconds = $this->getPowerIntervalSeconds();
-
         foreach ($this->powerRuntime as $device => $runtime) {
             if (empty($runtime['enabled'])) {
                 continue;
@@ -657,12 +659,22 @@ class MqttSubscribe extends Command
             $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
             $isPrimaryDevice = in_array($device, ['kebun-1', 'kebun-2'], true);
 
+            // If deep sleep window has ended, auto-resume to ACTIVE profile.
+            if ($state === 'SLEEPING' && is_int($sleepUntil) && $now > $sleepUntil) {
+                $runtime['state'] = 'ACTIVE';
+                $runtime['sleep_until'] = null;
+                $runtime['sleep_seconds'] = null;
+                $state = 'ACTIVE';
+                $isSleepingWindow = false;
+            }
+
             if (!$isPrimaryDevice && !$isSleepingWindow && ($now - $lastSeen) > self::OFFLINE_TIMEOUT_SECONDS) {
                 $runtime['enabled'] = false;
                 $this->powerRuntime[$device] = $runtime;
                 continue;
             }
 
+            $intervalSeconds = $this->getPowerIntervalSeconds($runtime, $now);
             $lastGeneratedAt = (int) ($runtime['last_generated_at'] ?? 0);
             if (($now - $lastGeneratedAt) < $intervalSeconds) {
                 continue;
@@ -712,9 +724,74 @@ class MqttSubscribe extends Command
         }
     }
 
-    protected function getPowerIntervalSeconds(): int
+    protected function getPowerIntervalSeconds(array $runtime, int $now): int
     {
-        return self::POWER_INTERVAL_SECONDS;
+        $state = strtoupper((string) ($runtime['state'] ?? 'ACTIVE'));
+        $sleepUntil = $runtime['sleep_until'] ?? null;
+        $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
+
+        if ($state === 'SLEEPING' || $isSleepingWindow) {
+            return self::POWER_INTERVAL_SLEEP_SECONDS;
+        }
+
+        return self::POWER_INTERVAL_ACTIVE_SECONDS;
+    }
+
+    protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $recordedAt, mixed $tds): bool
+    {
+        if ($kebun === null || !is_numeric($tds)) {
+            return true;
+        }
+
+        $currentTds = (float) $tds;
+        $runtime = $this->telemetryRateRuntime[$kebun] ?? null;
+        if (!is_array($runtime)) {
+            return true;
+        }
+
+        $lastSavedAt = $runtime['last_saved_at'] ?? null;
+        if (!$lastSavedAt instanceof Carbon) {
+            return true;
+        }
+
+        $lastTds = isset($runtime['last_tds']) && is_numeric($runtime['last_tds'])
+            ? (float) $runtime['last_tds']
+            : null;
+
+        $deltaTds = $lastTds !== null ? ($currentTds - $lastTds) : null;
+        $intervalSeconds = $this->resolveTelemetrySaveIntervalSeconds($currentTds, $deltaTds);
+        $elapsedSeconds = $lastSavedAt->diffInSeconds($recordedAt, false);
+
+        if ($elapsedSeconds < $intervalSeconds) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function resolveTelemetrySaveIntervalSeconds(float $currentTds, ?float $deltaTds): int
+    {
+        if ($currentTds < 560.0 || $currentTds > 840.0) {
+            return 60;
+        }
+
+        if ($deltaTds !== null && $deltaTds < -11.39) {
+            return 60;
+        }
+
+        return 600;
+    }
+
+    protected function markTelemetrySaved(?string $kebun, Carbon $recordedAt, mixed $tds): void
+    {
+        if ($kebun === null) {
+            return;
+        }
+
+        $this->telemetryRateRuntime[$kebun] = [
+            'last_saved_at' => $recordedAt->copy(),
+            'last_tds' => is_numeric($tds) ? (float) $tds : null,
+        ];
     }
 
     protected function generateCurrentForRuntime(array &$runtime): float
@@ -726,38 +803,44 @@ class MqttSubscribe extends Command
         $target = 100.0;
         $jitter = 0.0;
         $spikeChance = 0.0;
+        $blendRatio = 0.35;
 
         if ($state === 'SLEEPING') {
-            $target = $this->randomFloat(1.5, 3.0);
-            $jitter = $this->randomFloat(-0.08, 0.08);
+            // Deep sleep should be extremely low current draw.
+            $target = $this->randomFloat(0.8, 2.8);
+            $jitter = $this->randomFloat(-0.05, 0.05);
+            $blendRatio = 0.80;
         } elseif ($state === 'BOOT') {
-            $target = $this->randomFloat(80, 110);
-            $jitter = $this->randomFloat(-8, 8);
+            $target = $this->randomFloat(95, 140);
+            $jitter = $this->randomFloat(-6, 6);
             $spikeChance = 0.08;
+            $blendRatio = 0.45;
         } elseif ($mode === 'CALIBRATION' || $state === 'CALIBRATION') {
-            $target = $this->randomFloat(90, 130);
-            $jitter = $this->randomFloat(-2, 2);
+            $target = $this->randomFloat(115, 175);
+            $jitter = $this->randomFloat(-2.5, 2.5);
             $spikeChance = 0.01;
+            $blendRatio = 0.42;
         } else {
-            $target = $this->randomFloat(80, 240);
-            $jitter = $this->randomFloat(-4, 4);
+            $target = $this->randomFloat(135, 255);
+            $jitter = $this->randomFloat(-5, 5);
             $spikeChance = 0.05;
+            $blendRatio = 0.40;
         }
 
-        $current = ($prevCurrent * 0.65) + ($target * 0.35) + $jitter;
+        $current = ($prevCurrent * (1.0 - $blendRatio)) + ($target * $blendRatio) + $jitter;
 
         if ($spikeChance > 0 && mt_rand() / mt_getrandmax() < $spikeChance) {
             $current += $this->randomFloat(20, 40);
         }
 
         if ($state === 'SLEEPING') {
-            $current = $this->clamp($current, 1.5, 3.0);
+            $current = $this->clamp($current, 0.8, 3.2);
         } elseif ($state === 'BOOT') {
-            $current = $this->clamp($current, 70, 150);
+            $current = $this->clamp($current, 85, 170);
         } elseif ($mode === 'CALIBRATION' || $state === 'CALIBRATION') {
-            $current = $this->clamp($current, 88, 140);
+            $current = $this->clamp($current, 105, 190);
         } else {
-            $current = $this->clamp($current, 70, 260);
+            $current = $this->clamp($current, 120, 280);
         }
 
         $runtime['prev_current'] = $current;
@@ -909,6 +992,15 @@ class MqttSubscribe extends Command
             $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
             $kebun = $payload['kebun'] ?? null;
 
+            if (!$this->shouldSaveTelemetryByTdsRule($kebun, $recordedAt, $payload['tds'] ?? null)) {
+                Log::info('Telemetry skipped by TDS interval rule', [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt->toDateTimeString(),
+                    'tds' => $payload['tds'] ?? null,
+                ]);
+                return;
+            }
+
             $created = Telemetry::firstOrCreate(
                 [
                     'kebun' => $kebun,
@@ -927,6 +1019,7 @@ class MqttSubscribe extends Command
             );
 
             if ($created->wasRecentlyCreated) {
+                $this->markTelemetrySaved($kebun, $recordedAt, $payload['tds'] ?? null);
                 Log::info('Telemetry saved', ['id' => $created->id ?? null]);
                 return;
             }
