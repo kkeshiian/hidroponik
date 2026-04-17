@@ -812,12 +812,29 @@ class MqttSubscribe extends Command
     protected function saveTelemetry(array $payload): void
     {
         try {
-            $recordedAt = now();
+            $serverNow = now();
+            $recordedAt = $serverNow->copy();
+            $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
+
             if (!empty($payload['date']) && !empty($payload['time'])) {
                 try {
-                    $parsedRecordedAt = Carbon::parse($payload['date'] . ' ' . $payload['time']);
+                    $parsedRecordedAt = Carbon::parse(
+                        $payload['date'] . ' ' . $payload['time'],
+                        config('app.timezone')
+                    );
+
+                    if ($parsedRecordedAt->greaterThan($serverNow->copy()->addMinutes($maxFutureMinutes))) {
+                        Log::warning('Telemetry skipped: future device timestamp detected', [
+                            'kebun' => $payload['kebun'] ?? null,
+                            'device_time' => $parsedRecordedAt->toDateTimeString(),
+                            'server_time' => $serverNow->toDateTimeString(),
+                            'tds' => $payload['tds'] ?? null,
+                        ]);
+                        return;
+                    }
+
                     // Jika jam perangkat melenceng jauh dari server, pakai waktu server.
-                    $diffMinutes = abs($parsedRecordedAt->diffInMinutes($recordedAt, false));
+                    $diffMinutes = abs($parsedRecordedAt->diffInMinutes($serverNow, false));
                     if ($diffMinutes <= 180) {
                         $recordedAt = $parsedRecordedAt;
                     }

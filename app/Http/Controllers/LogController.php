@@ -15,6 +15,12 @@ class LogController extends Controller
 {
     private const POWER_WH_INTERVAL_KEY = 'power_wh_interval_seconds';
 
+    private function latestAllowedRecordedAt(): Carbon
+    {
+        $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
+        return now()->addMinutes($maxFutureMinutes);
+    }
+
     private function estimatedVoltage(?string $deviceName, $timestamp): float
     {
         $seed = strtolower((string) $deviceName) . '|' . (string) $timestamp;
@@ -85,7 +91,8 @@ class LogController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Telemetry::query();
+            $query = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
 
             $fromDate = $this->normalizedDate($request->input('from'));
             $toDate = $this->normalizedDate($request->input('to'));
@@ -137,7 +144,8 @@ class LogController extends Controller
     public function api(Request $request)
     {
         try {
-            $query = Telemetry::query();
+            $query = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             $fromDate = $this->normalizedDate($request->input('from'));
             $toDate = $this->normalizedDate($request->input('to'));
             
@@ -215,7 +223,8 @@ class LogController extends Controller
             $rows = $query->orderBy('recorded_at', 'desc')->skip($skip)->take($perPage)->get();
             
             // Calculate stats on filtered data
-            $statsQuery = Telemetry::query();
+            $statsQuery = Telemetry::query()
+                ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             if ($request->filled('kebun')) {
                 $statsQuery->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
             }
@@ -270,6 +279,7 @@ class LogController extends Controller
     {
         // Get last 15 records for each kebun for charts
         $kebunA = Telemetry::whereIn('kebun', ['kebun-a', 'kebun-1', 'a'])
+            ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
@@ -277,6 +287,7 @@ class LogController extends Controller
             ->values();
 
         $kebunB = Telemetry::whereIn('kebun', ['kebun-b', 'kebun-2', 'b'])
+            ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
             ->get()
@@ -299,7 +310,9 @@ class LogController extends Controller
             fputcsv($handle, ['Tanggal', 'Waktu', 'Perangkat', 'pH', 'TDS (ppm)', 'Suhu (°C)']);
 
             try {
-                $query = Telemetry::query()->orderBy('recorded_at', 'desc');
+                $query = Telemetry::query()
+                    ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
+                    ->orderBy('recorded_at', 'desc');
                 $query->chunk(200, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
                         $recordedAt = $r->recorded_at;
