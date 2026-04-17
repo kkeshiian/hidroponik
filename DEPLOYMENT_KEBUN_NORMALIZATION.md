@@ -3,27 +3,33 @@
 **Status:** ✅ Code ready - Commit: `a31d872`
 
 ## Problem Solved
+
 Data `kebun-1` dari MQTT masuk tapi tidak muncul di UI karena:
-- MQTT topic menggunakan `kebun-1` 
+
+- MQTT topic menggunakan `kebun-1`
 - Database menyimpan sebagai `kebun-1`
 - UI dashboard mencari `kebun-a` (standardized)
 - **Result:** Data tidak ketemu ❌
 
 ## Solution Implemented
+
 ✅ Added `normalizeKebun()` method di MqttSubscribe.php
-- Automatically converts `kebun-1` → `kebun-a` 
+
+- Automatically converts `kebun-1` → `kebun-a`
 - Converts `kebun-2` → `kebun-b`
 - Before storing to database
 
 ## Deployment Steps untuk Termius Hosting
 
 ### Step 1: SSH ke Server Termius
+
 ```bash
 ssh user@your-termius-ip
 cd /path/to/hidroponik
 ```
 
 ### Step 2: Pull Latest Code
+
 ```bash
 git fetch origin
 git reset --hard origin/main
@@ -32,6 +38,7 @@ git reset --hard origin/htht
 ```
 
 ### Step 3: Stop Current MQTT Subscriber
+
 ```bash
 # Kill the running mqtt:subscribe process
 pkill -f "artisan mqtt:subscribe"
@@ -41,6 +48,7 @@ ps aux | grep mqtt:subscribe
 ```
 
 ### Step 4: Restart MQTT Subscriber dengan Code Baru
+
 ```bash
 php artisan mqtt:subscribe &
 # atau pakai nohup agar tetap jalan setelah disconnect SSH:
@@ -48,12 +56,13 @@ nohup php artisan mqtt:subscribe > storage/logs/mqtt.log 2>&1 &
 ```
 
 ### Step 5: Verify in UI
+
 1. Buka http://hidroganikalfa.web.id/log
 2. Kirim test data MQTT:
-   ```
-   Topic: hidroganik/kebun-1/publish
-   Payload: {"ph": 6.5, "tds": 850, "suhu": 25}
-   ```
+    ```
+    Topic: hidroganik/kebun-1/publish
+    Payload: {"ph": 6.5, "tds": 850, "suhu": 25}
+    ```
 3. Lihat di Log Data → harusnya muncul sebagai **kebun-a** ✓
 
 ---
@@ -63,6 +72,7 @@ nohup php artisan mqtt:subscribe > storage/logs/mqtt.log 2>&1 &
 ### File: `app/Console/Commands/MqttSubscribe.php`
 
 **New Method Added:**
+
 ```php
 protected function normalizeKebun(string $kebun): string
 {
@@ -81,6 +91,7 @@ protected function normalizeKebun(string $kebun): string
 ```
 
 **Updated in `handlePublishMessage()` method:**
+
 ```php
 // BEFORE:
 $rawPayload = [
@@ -97,6 +108,7 @@ $rawPayload = [
 ```
 
 **Updated `resolveMirrorDevice()`:**
+
 ```php
 // Returns normalized names
 'kebun-1' → 'kebun-b'  (instead of kebun-2)
@@ -114,10 +126,10 @@ $rawPayload = [
 - [ ] Send test MQTT message
 - [ ] Verify data appears in Log Data UI as `kebun-a`
 - [ ] Check database: Data saved with normalized name
-  ```sql
-  SELECT DISTINCT kebun FROM telemetries;
-  -- Should show: kebun-a, kebun-b (no kebun-1 or kebun-2)
-  ```
+    ```sql
+    SELECT DISTINCT kebun FROM telemetries;
+    -- Should show: kebun-a, kebun-b (no kebun-1 or kebun-2)
+    ```
 
 ---
 
@@ -143,26 +155,31 @@ SELECT DISTINCT kebun FROM telemetries ORDER BY kebun;
 ## ⚠️ Troubleshooting
 
 ### Data masih tidak muncul?
+
 1. Periksa MQTT subscriber berjalan:
-   ```bash
-   ps aux | grep mqtt:subscribe
-   ```
+
+    ```bash
+    ps aux | grep mqtt:subscribe
+    ```
 
 2. Lihat error logs:
-   ```bash
-   tail -50 storage/logs/laravel.log
-   tail -50 storage/logs/mqtt.log
-   ```
+
+    ```bash
+    tail -50 storage/logs/laravel.log
+    tail -50 storage/logs/mqtt.log
+    ```
 
 3. Verify MySQL connection:
-   ```bash
-   php artisan tinker
-   > DB::connection()->getPdo()
-   ```
+    ```bash
+    php artisan tinker
+    > DB::connection()->getPdo()
+    ```
 
 ### Old data with kebun-1 masih ada?
+
 Opsi 1: Keep as-is (UI filter akan handle)
 Opsi 2: Migrate with script:
+
 ```bash
 php artisan migrate:fresh  # ⚠️ WARNING: deletes all data!
 # atau
@@ -189,6 +206,7 @@ Changes:
 ## ✅ Deployment Completion
 
 Setelah semua steps selesai:
+
 - ✓ Data kebun-1 dari MQTT akan disimpan sebagai kebun-a
 - ✓ Data muncul di UI Log Data dengan alias kebun-a
 - ✓ Dashboard card akan menampilkan data kebun-a dengan benar
