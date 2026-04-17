@@ -653,6 +653,7 @@ class MqttSubscribe extends Command
 
             $state = strtoupper((string) ($runtime['state'] ?? 'ACTIVE'));
             $mode = strtoupper((string) ($runtime['mode'] ?? 'AUTO'));
+            $effectiveState = $state;
             $lastSeen = (int) ($runtime['last_mqtt_at'] ?? 0);
             $sleepUntil = $runtime['sleep_until'] ?? null;
             $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
@@ -667,6 +668,11 @@ class MqttSubscribe extends Command
                 $isSleepingWindow = false;
             }
 
+            // Force low-current profile while telemetry is in 600s stable lock window.
+            if ($this->isTelemetryStableLocked($device, $now)) {
+                $effectiveState = 'SLEEPING';
+            }
+
             if (!$isPrimaryDevice && !$isSleepingWindow && ($now - $lastSeen) > self::OFFLINE_TIMEOUT_SECONDS) {
                 $runtime['enabled'] = false;
                 $this->powerRuntime[$device] = $runtime;
@@ -679,14 +685,18 @@ class MqttSubscribe extends Command
                 continue;
             }
 
-            $current = $this->generateCurrentForRuntime($runtime);
+            $runtimeForGeneration = $runtime;
+            $runtimeForGeneration['state'] = $effectiveState;
+
+            $current = $this->generateCurrentForRuntime($runtimeForGeneration);
+            $runtime['prev_current'] = $runtimeForGeneration['prev_current'] ?? ($runtime['prev_current'] ?? 95.0);
             $runtime['last_generated_at'] = $now;
             $this->powerRuntime[$device] = $runtime;
 
             try {
                 PowerLog::create([
                     'device_name' => $device,
-                    'state' => $state,
+                    'state' => $effectiveState,
                     'mode' => $mode,
                     'current_ma' => $current,
                     'timestamp' => now(),
@@ -726,6 +736,29 @@ class MqttSubscribe extends Command
     protected function getPowerIntervalSeconds(): int
     {
         return self::POWER_INTERVAL_SECONDS;
+    }
+
+    protected function isTelemetryStableLocked(string $device, int $nowTs): bool
+    {
+        $keys = match (strtolower(trim($device))) {
+            'kebun-1', 'kebun-a', 'a' => ['kebun-1', 'kebun-a', 'a'],
+            'kebun-2', 'kebun-b', 'b' => ['kebun-2', 'kebun-b', 'b'],
+            default => [$device],
+        };
+
+        foreach ($keys as $key) {
+            $runtime = $this->telemetryRateRuntime[$key] ?? null;
+            if (!is_array($runtime)) {
+                continue;
+            }
+
+            $stableLockUntil = $runtime['stable_lock_until'] ?? null;
+            if ($stableLockUntil instanceof Carbon && $stableLockUntil->timestamp > $nowTs) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $recordedAt, mixed $tds): bool
