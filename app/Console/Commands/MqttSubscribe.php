@@ -36,7 +36,7 @@ class MqttSubscribe extends Command
     /** @var array<string, array<string, mixed>> */
     private array $ppmRuntime = [];
 
-    /** @var array<string, array{last_saved_at: Carbon, last_tds: float|null}> */
+    /** @var array<string, array{last_saved_at: Carbon, last_tds: float|null, stable_lock_until?: Carbon|null}> */
     private array $telemetryRateRuntime = [];
 
     /**
@@ -740,6 +740,11 @@ class MqttSubscribe extends Command
             return true;
         }
 
+        $stableLockUntil = $runtime['stable_lock_until'] ?? null;
+        if ($stableLockUntil instanceof Carbon && $recordedAt->lessThan($stableLockUntil)) {
+            return false;
+        }
+
         $lastSavedAt = $runtime['last_saved_at'] ?? null;
         if (!$lastSavedAt instanceof Carbon) {
             return true;
@@ -779,9 +784,21 @@ class MqttSubscribe extends Command
             return;
         }
 
+        $runtime = $this->telemetryRateRuntime[$kebun] ?? null;
+        $previousTds = null;
+        if (is_array($runtime) && isset($runtime['last_tds']) && is_numeric($runtime['last_tds'])) {
+            $previousTds = (float) $runtime['last_tds'];
+        }
+
+        $currentTds = is_numeric($tds) ? (float) $tds : null;
+        $deltaTds = ($currentTds !== null && $previousTds !== null) ? ($currentTds - $previousTds) : null;
+        $isStableCategory = $currentTds !== null
+            && $this->resolveTelemetrySaveIntervalSeconds($currentTds, $deltaTds) === 600;
+
         $this->telemetryRateRuntime[$kebun] = [
             'last_saved_at' => $recordedAt->copy(),
-            'last_tds' => is_numeric($tds) ? (float) $tds : null,
+            'last_tds' => $currentTds,
+            'stable_lock_until' => $isStableCategory ? $recordedAt->copy()->addSeconds(600) : null,
         ];
     }
 
