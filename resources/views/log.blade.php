@@ -185,6 +185,19 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="text-sm text-gray-500" id="power-pagination-info">
+                Showing 0 to 0 of 0 entries
+            </div>
+            <div class="flex gap-2" id="power-pagination-buttons">
+                <button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Previous</button>
+                <div class="flex gap-1">
+                    <span class="px-4 py-2 bg-slate-200 text-slate-500 rounded-lg">1</span>
+                </div>
+                <button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Next</button>
+            </div>
+        </div>
     </div>
 
 </div>
@@ -194,6 +207,7 @@
 (() => {
     const intervalMs = 5000;
     let currentPage = 1;
+    let currentPowerPage = 1;
 
     function formatTelemetryTimestamp(value, createdAt = null) {
         const parsed = value ? new Date(value) : null;
@@ -296,9 +310,51 @@
         return (value ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
     }
 
-    function renderPowerRows(rows) {
+    function renderPowerRows(rows, pagination = null) {
         const tbody = document.getElementById('power-log-rows');
         if (!tbody) return;
+
+        const infoEl = document.getElementById('power-pagination-info');
+        const buttonsEl = document.getElementById('power-pagination-buttons');
+
+        if (pagination && infoEl) {
+            infoEl.textContent = `Showing ${pagination.from ?? 0} to ${pagination.to ?? 0} of ${pagination.total ?? 0} entries`;
+        }
+
+        if (pagination && buttonsEl) {
+            currentPowerPage = pagination.current_page || 1;
+            const lastPage = pagination.last_page || 1;
+
+            let buttonsHtml = '';
+            if (currentPowerPage <= 1) {
+                buttonsHtml += '<button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Previous</button>';
+            } else {
+                buttonsHtml += `<button onclick="goToPowerPage(${currentPowerPage - 1})" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">Previous</button>`;
+            }
+
+            buttonsHtml += '<div class="flex gap-1">';
+            const maxButtons = Math.min(lastPage, 5);
+            for (let i = 1; i <= maxButtons; i++) {
+                if (i === currentPowerPage) {
+                    buttonsHtml += `<span class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold">${i}</span>`;
+                } else {
+                    buttonsHtml += `<button onclick="goToPowerPage(${i})" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">${i}</button>`;
+                }
+            }
+            if (lastPage > 5) {
+                buttonsHtml += '<span class="px-2 py-2 text-gray-500">...</span>';
+                buttonsHtml += `<button onclick="goToPowerPage(${lastPage})" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">${lastPage}</button>`;
+            }
+            buttonsHtml += '</div>';
+
+            if (currentPowerPage >= lastPage) {
+                buttonsHtml += '<button disabled class="px-4 py-2 bg-gray-200 text-gray-400 rounded-lg cursor-not-allowed">Next</button>';
+            } else {
+                buttonsHtml += `<button onclick="goToPowerPage(${currentPowerPage + 1})" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">Next</button>`;
+            }
+
+            buttonsEl.innerHTML = buttonsHtml;
+        }
 
         if (!rows || !rows.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">Belum ada data. Menunggu trigger MQTT dari perangkat...</td></tr>';
@@ -430,33 +486,40 @@
         }
     }
 
-    async function fetchPowerLogs() {
+    async function fetchPowerLogs(page = null) {
         try {
+            if (page !== null) currentPowerPage = page;
+
             const device = document.getElementById('filter-device')?.value || '';
 
             const params = new URLSearchParams();
-            params.append('limit', '120');
+            params.append('page', String(currentPowerPage));
+            params.append('per_page', '25');
             if (device) params.append('device', device);
 
             const res = await fetch('/api/power-logs?' + params.toString());
             if (!res.ok) return;
 
             const json = await res.json();
-            renderPowerRows(json.rows || []);
+            renderPowerRows(json.rows || [], json.pagination || null);
         } catch (_) {
             // ignore
         }
     }
 
     // Add change listeners to filters
-    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
 
     // Function to go to specific page
     window.goToPage = function(page) {
         fetchLogs(page);
+    };
+
+    window.goToPowerPage = function(page) {
+        fetchPowerLogs(page);
     };
 
     // initial fetch and start auto-refresh

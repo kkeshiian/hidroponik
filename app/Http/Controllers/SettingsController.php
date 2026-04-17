@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
 use App\Models\Telemetry;
+use App\Models\PowerLog;
 use Carbon\Carbon;
 
 class SettingsController extends Controller
@@ -83,39 +84,53 @@ class SettingsController extends Controller
         }
         
         $period = $validated['period'];
-        $deleted = 0;
+        $deletedTelemetry = 0;
+        $deletedPower = 0;
         
         try {
+            DB::beginTransaction();
+
+            $cutoff = null;
             switch ($period) {
                 case '1week':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subWeek())->delete();
+                    $cutoff = Carbon::now()->subWeek();
                     break;
                 case '2weeks':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subWeeks(2))->delete();
+                    $cutoff = Carbon::now()->subWeeks(2);
                     break;
                 case '1month':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subMonth())->delete();
+                    $cutoff = Carbon::now()->subMonth();
                     break;
                 case '3months':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subMonths(3))->delete();
+                    $cutoff = Carbon::now()->subMonths(3);
                     break;
                 case '6months':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subMonths(6))->delete();
+                    $cutoff = Carbon::now()->subMonths(6);
                     break;
                 case '1year':
-                    $deleted = Telemetry::where('recorded_at', '<', Carbon::now()->subYear())->delete();
+                    $cutoff = Carbon::now()->subYear();
                     break;
                 case 'all':
-                    $deleted = Telemetry::query()->delete();
+                    $deletedTelemetry = Telemetry::query()->delete();
+                    $deletedPower = PowerLog::query()->delete();
                     break;
             }
+
+            if ($cutoff instanceof Carbon) {
+                $deletedTelemetry = Telemetry::where('recorded_at', '<', $cutoff)->delete();
+                $deletedPower = PowerLog::where('timestamp', '<', $cutoff)->delete();
+            }
+
+            DB::commit();
             
             return response()->json([
                 'success' => true,
-                'message' => "Berhasil menghapus {$deleted} data",
-                'deleted' => $deleted
+                'message' => "Berhasil menghapus {$deletedTelemetry} data sensor dan {$deletedPower} data power",
+                'deleted_telemetry' => $deletedTelemetry,
+                'deleted_power' => $deletedPower,
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             \Log::error('Delete data error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,

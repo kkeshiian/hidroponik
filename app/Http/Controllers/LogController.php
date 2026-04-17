@@ -378,8 +378,9 @@ class LogController extends Controller
         try {
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
 
-            $limit = (int) $request->input('limit', 100);
-            $limit = max(1, min($limit, 500));
+            $page = max(1, (int) $request->input('page', 1));
+            $perPage = max(1, min((int) $request->input('per_page', 25), 100));
+            $offset = ($page - 1) * $perPage;
 
             $query = PowerLog::query()->orderByDesc('timestamp');
 
@@ -387,7 +388,9 @@ class LogController extends Controller
                 $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
             }
 
-            $rows = $query->limit($limit)->get([
+            $total = (int) $query->count();
+
+            $rows = $query->skip($offset)->take($perPage)->get([
                 'device_name',
                 'state',
                 'mode',
@@ -429,6 +432,14 @@ class LogController extends Controller
             return Response::json([
                 'rows' => $rows,
                 'interval_detik' => $intervalSeconds,
+                'pagination' => [
+                    'current_page' => $page,
+                    'last_page' => (int) max(1, (int) ceil($total / max(1, $perPage))),
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'from' => $total > 0 ? ($offset + 1) : 0,
+                    'to' => min($offset + $perPage, $total),
+                ],
                 'generated_at' => now()->toDateTimeString(),
             ]);
         } catch (\Throwable $e) {
