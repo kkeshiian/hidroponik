@@ -826,19 +826,36 @@ class MqttSubscribe extends Command
                 }
             }
 
-            $created = Telemetry::create([
-                'kebun' => $payload['kebun'] ?? null,
-                'ph' => $payload['ph'] ?? null,
-                'tds' => $payload['tds'] ?? null,
-                'suhu' => $payload['suhu'] ?? null,
-                'cal_ph_netral' => $payload['cal_ph_netral'] ?? null,
-                'cal_ph_asam' => $payload['cal_ph_asam'] ?? null,
-                'cal_tds_k' => $payload['cal_tds_k'] ?? null,
-                'tds_mentah' => $payload['tds_mentah'] ?? null,
-                'raw_payload' => $payload['raw'] ?? $payload,
-                'recorded_at' => $recordedAt,
+            // Normalize to second precision so duplicate payloads in the same second are ignored.
+            $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
+            $kebun = $payload['kebun'] ?? null;
+
+            $created = Telemetry::firstOrCreate(
+                [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt,
+                ],
+                [
+                    'ph' => $payload['ph'] ?? null,
+                    'tds' => $payload['tds'] ?? null,
+                    'suhu' => $payload['suhu'] ?? null,
+                    'cal_ph_netral' => $payload['cal_ph_netral'] ?? null,
+                    'cal_ph_asam' => $payload['cal_ph_asam'] ?? null,
+                    'cal_tds_k' => $payload['cal_tds_k'] ?? null,
+                    'tds_mentah' => $payload['tds_mentah'] ?? null,
+                    'raw_payload' => $payload['raw'] ?? $payload,
+                ]
+            );
+
+            if ($created->wasRecentlyCreated) {
+                Log::info('Telemetry saved', ['id' => $created->id ?? null]);
+                return;
+            }
+
+            Log::info('Telemetry duplicate skipped', [
+                'kebun' => $kebun,
+                'recorded_at' => $recordedAt->toDateTimeString(),
             ]);
-            Log::info('Telemetry saved', ['id' => $created->id ?? null]);
         } catch (\Exception $e) {
             Log::error('Failed to save telemetry to database: ' . $e->getMessage());
             echo "DB save error: " . $e->getMessage() . "\n";

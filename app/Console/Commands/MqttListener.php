@@ -153,28 +153,87 @@ class MqttListener extends Command
             $topicParts = explode('/', $topic);
             $kebun = $topicParts[1] ?? 'unknown';
 
+            $recordedAt = Carbon::now();
+            if (!empty($data['date']) && !empty($data['time'])) {
+                try {
+                    $parsedRecordedAt = Carbon::parse($data['date'] . ' ' . $data['time']);
+                    $diffMinutes = abs($parsedRecordedAt->diffInMinutes($recordedAt, false));
+                    if ($diffMinutes <= 180) {
+                        $recordedAt = $parsedRecordedAt;
+                    }
+                } catch (\Throwable $e) {
+                    // Keep server time if payload timestamp cannot be parsed.
+                }
+            }
+            $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
+
             // Get calibration settings
             $calibration = CalibrationSetting::latest()->first();
 
-            $telemetry = Telemetry::create([
-                'kebun' => $kebun,
-                'ph' => $data['ph'] ?? null,
-                'tds' => $data['tds'] ?? null,
-                'suhu' => $data['suhu'] ?? $data['temperature'] ?? null,
-                'cal_ph_netral' => $calibration->ph_netral ?? null,
-                'cal_ph_asam' => $calibration->ph_asam ?? null,
-                'cal_tds_k' => $calibration->tds_k ?? null,
-                'tds_mentah' => $data['tds_mentah'] ?? $data['tds_raw'] ?? null,
-                'raw_payload' => $data,
-                'recorded_at' => Carbon::now(),
-            ]);
+            $telemetry = Telemetry::firstOrCreate(
+                [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt,
+                ],
+                [
+                    'ph' => $data['ph'] ?? null,
+                    'tds' => $data['tds'] ?? null,
+                    'suhu' => $data['suhu'] ?? $data['temperature'] ?? null,
+                    'cal_ph_netral' => $calibration->ph_netral ?? null,
+                    'cal_ph_asam' => $calibration->ph_asam ?? null,
+                    'cal_tds_k' => $calibration->tds_k ?? null,
+                    'tds_mentah' => $data['tds_mentah'] ?? $data['tds_raw'] ?? null,
+                    'raw_payload' => $data,
+                ]
+            );
 
-            $this->info("✓ Data saved to database (ID: {$telemetry->id})");
-            Log::info('Telemetry data saved', [
-                'id' => $telemetry->id,
-                'kebun' => $kebun,
-                'data' => $data
-            ]);
+            if ($telemetry->wasRecentlyCreated) {
+                $this->info("✓ Data saved to database (ID: {$telemetry->id})");
+                Log::info('Telemetry data saved', [
+                    'id' => $telemetry->id,
+                    'kebun' => $kebun,
+                    'data' => $data,
+                ]);
+            } else {
+                $this->comment("⏭ Duplicate skipped for {$kebun} at {$recordedAt->toDateTimeString()}");
+                Log::info('Telemetry duplicate skipped', [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt->toDateTimeString(),
+                ]);
+            }
+
+            $normalizedKebun = strtolower(trim((string) $kebun));
+            if (in_array($normalizedKebun, ['kebun-1', 'kebun-a', 'a'], true)) {
+                $mirroredRaw = $data;
+                $mirroredRaw['kebun'] = 'kebun-2';
+                $mirroredRaw['mirrored_from'] = $kebun;
+
+                $mirror = Telemetry::firstOrCreate(
+                    [
+                        'kebun' => 'kebun-2',
+                        'recorded_at' => $recordedAt,
+                    ],
+                    [
+                        'ph' => $data['ph'] ?? null,
+                        'tds' => $data['tds'] ?? null,
+                        'suhu' => $data['suhu'] ?? $data['temperature'] ?? null,
+                        'cal_ph_netral' => $calibration->ph_netral ?? null,
+                        'cal_ph_asam' => $calibration->ph_asam ?? null,
+                        'cal_tds_k' => $calibration->tds_k ?? null,
+                        'tds_mentah' => $data['tds_mentah'] ?? $data['tds_raw'] ?? null,
+                        'raw_payload' => $mirroredRaw,
+                    ]
+                );
+
+                if ($mirror->wasRecentlyCreated) {
+                    $this->info("✓ Mirror saved to kebun-2 (ID: {$mirror->id})");
+                    Log::info('Telemetry mirror saved', [
+                        'id' => $mirror->id,
+                        'kebun' => 'kebun-2',
+                        'source' => $kebun,
+                    ]);
+                }
+            }
 
         } catch (\Exception $e) {
             $this->error('✗ Error saving to database: ' . $e->getMessage());

@@ -7,6 +7,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+    
+    function resolveMirrorDevice(kebun) {
+      const device = String(kebun || '').trim().toLowerCase();
+      if (['kebun-1', 'kebun-a', 'a'].includes(device)) {
+        return 'kebun-2';
+      }
+      return null;
+    }
 // __dirname replacement for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,6 +99,26 @@ async function main() {
     queueLimit: 0,
   });
 
+
+        const mirrorKebun = resolveMirrorDevice(kebun);
+        if (mirrorKebun) {
+          const mirroredPayload = {
+            ...payload,
+            kebun: mirrorKebun,
+            raw_payload: JSON.stringify({
+              ...raw,
+              kebun: mirrorKebun,
+              mirrored_from: kebun,
+            }),
+          };
+
+          const mirrorSave = await saveTelemetry(mirroredPayload);
+          if (mirrorSave.inserted) {
+            console.log('[DB] Saved mirror row:', mirrorKebun, 'tds=', mirroredPayload.tds, 'suhu=', mirroredPayload.suhu, 'interval=', currentInterval);
+          } else {
+            console.log('[DB] Skipped mirror duplicate:', mirrorKebun, 'at', recordedAt.toISOString());
+          }
+        }
   // Cache calibration per kebun for 60s
   const calibrationCache = new Map();
   const CAL_CACHE_MS = 60_000;
@@ -112,6 +140,17 @@ async function main() {
   }
 
   async function saveTelemetry(payload) {
+    const recordedAt = payload.recorded_at ?? new Date();
+
+    const [existing] = await pool.query(
+      'SELECT id FROM telemetries WHERE kebun = ? AND recorded_at = ? LIMIT 1',
+      [payload.kebun ?? null, recordedAt]
+    );
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      return { inserted: false, id: existing[0].id };
+    }
+
     const sql = `INSERT INTO telemetries (kebun, ph, tds, suhu, cal_ph_netral, cal_ph_asam, cal_tds_k, tds_mentah, raw_payload, recorded_at, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
     const params = [
@@ -124,9 +163,10 @@ async function main() {
       payload.cal_tds_k ?? null,
       payload.tds_mentah ?? null,
       payload.raw_payload ?? null,
-      payload.recorded_at ?? new Date(),
+      recordedAt,
     ];
-    await pool.execute(sql, params);
+    const [result] = await pool.execute(sql, params);
+    return { inserted: true, id: result?.insertId ?? null };
   }
 
   const client = mqtt.connect(MQTT_URL, {
@@ -201,8 +241,12 @@ async function main() {
         recorded_at: recordedAt,
       };
 
-      await saveTelemetry(payload);
-      console.log('[DB] Saved row:', kebun, 'tds=', payload.tds, 'suhu=', payload.suhu, 'interval=', currentInterval);
+      const saveResult = await saveTelemetry(payload);
+      if (saveResult.inserted) {
+        console.log('[DB] Saved row:', kebun, 'tds=', payload.tds, 'suhu=', payload.suhu, 'interval=', currentInterval);
+      } else {
+        console.log('[DB] Skipped duplicate:', kebun, 'at', recordedAt.toISOString());
+      }
     } catch (e) {
       console.error('[ERROR] message handling failed:', e && e.message ? e.message : e);
     }
