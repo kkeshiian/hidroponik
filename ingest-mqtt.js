@@ -1,3 +1,4 @@
+
 /**
  * MQTT Data Ingestion Service for Hidroponik System
  * 
@@ -17,6 +18,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+
+function resolveMirrorDevice(kebun) {
+  const device = String(kebun || '').trim().toLowerCase();
+  if (['kebun-1', 'kebun-a', 'a'].includes(device)) {
+    return 'kebun-2';
+  }
+  return null;
+}
 
 // Load .env file
 dotenv.config();
@@ -201,6 +210,17 @@ async function getCalibration(pool, kebun) {
  * Save telemetry data to database
  */
 async function saveTelemetry(pool, payload) {
+  const recordedAt = payload.recorded_at ?? new Date();
+
+  const [existing] = await pool.query(
+    'SELECT id FROM telemetries WHERE kebun = ? AND recorded_at = ? LIMIT 1',
+    [payload.kebun ?? null, recordedAt]
+  );
+
+  if (Array.isArray(existing) && existing.length > 0) {
+    return { inserted: false, id: existing[0].id };
+  }
+
   const sql = `
     INSERT INTO telemetries (
       kebun, ph, tds, suhu, 
@@ -219,10 +239,11 @@ async function saveTelemetry(pool, payload) {
     payload.cal_tds_k ?? null,
     payload.tds_mentah ?? null,
     payload.raw_payload ?? null,
-    payload.recorded_at ?? new Date(),
+    recordedAt,
   ];
   
-  await pool.execute(sql, params);
+  const [result] = await pool.execute(sql, params);
+  return { inserted: true, id: result?.insertId ?? null };
 }
 
 // ==================== MQTT MESSAGE HANDLER ====================
@@ -305,9 +326,33 @@ async function handleMessage(pool, client, topic, message) {
     };
     
     // Save to database
-    await saveTelemetry(pool, payload);
-    
-    log('info', `Saved: ${kebun} | pH=${payload.ph} TDS=${payload.tds} Suhu=${payload.suhu}°C`);
+    const saveResult = await saveTelemetry(pool, payload);
+
+    if (saveResult.inserted) {
+      log('info', `Saved: ${kebun} | pH=${payload.ph} TDS=${payload.tds} Suhu=${payload.suhu}°C`);
+    } else {
+      log('debug', `Duplicate skipped: ${kebun} @ ${new Date(recordedAt).toISOString()}`);
+    }
+
+    const mirrorKebun = resolveMirrorDevice(kebun);
+    if (mirrorKebun) {
+      const mirroredPayload = {
+        ...payload,
+        kebun: mirrorKebun,
+        raw_payload: JSON.stringify({
+          ...raw,
+          kebun: mirrorKebun,
+          mirrored_from: kebun,
+        }),
+      };
+
+      const mirrorSave = await saveTelemetry(pool, mirroredPayload);
+      if (mirrorSave.inserted) {
+        log('info', `Saved mirror: ${mirrorKebun} | pH=${mirroredPayload.ph} TDS=${mirroredPayload.tds} Suhu=${mirroredPayload.suhu}°C`);
+      } else {
+        log('debug', `Duplicate mirror skipped: ${mirrorKebun} @ ${new Date(recordedAt).toISOString()}`);
+      }
+    }
     
   } catch (error) {
     log('error', 'Message handling failed:', error.message);
