@@ -18,13 +18,14 @@ class MqttSubscribe extends Command
     private const POWER_INTERVAL_SECONDS = 10;
     private const PPM_INTERVAL_SECONDS = 5;
     private const PPM_START_HOUR_WITA = 21;
+    private const PPM_REFILL_HOUR_WITA = 6;
     private const PPM_TIMEZONE = 'Asia/Makassar';
     private const PPM_START_MIN = 897.0;
     private const PPM_START_MAX = 905.0;
-    private const PPM_TARGET_MIN = 455.0;
-    private const PPM_TARGET_MAX = 465.0;
+    private const PPM_TARGET_MIN = 405.0;
+    private const PPM_TARGET_MAX = 435.0;
     private const PPM_DURATION_DAYS_MIN = 2.5;
-    private const PPM_DURATION_DAYS_MAX = 2.8;
+    private const PPM_DURATION_DAYS_MAX = 2.5;
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
@@ -238,25 +239,11 @@ class MqttSubscribe extends Command
         $nowWita = CarbonImmutable::now(self::PPM_TIMEZONE);
         $bucketNow = $nowWita->setSecond((int) (floor($nowWita->second / self::PPM_INTERVAL_SECONDS) * self::PPM_INTERVAL_SECONDS));
 
-        $cycleStart = $this->resolveCycleStartWita($bucketNow);
-        $cycleKey = $cycleStart->format('Y-m-d H:i:s');
         $runtimeKey = 'alat-1';
 
         $runtime = $this->ppmRuntime[$runtimeKey] ?? null;
-        if (!is_array($runtime) || ($runtime['cycle_key'] ?? '') !== $cycleKey) {
-            $seedBase = abs(crc32('ppm-cycle:' . $cycleKey));
-            $durationDays = self::PPM_DURATION_DAYS_MIN + (($seedBase % 301) / 1000);
-            $startPpm = self::PPM_START_MIN + (($seedBase % 81) / 10);
-            $targetPpm = self::PPM_TARGET_MIN + ((($seedBase >> 8) % 101) / 10);
-
-            $runtime = [
-                'cycle_key' => $cycleKey,
-                'start' => round($startPpm),
-                'target' => round($targetPpm),
-                'duration_seconds' => (int) round($durationDays * 86400),
-                'value' => round($startPpm),
-                'last_bucket' => $cycleStart,
-            ];
+        if (!is_array($runtime)) {
+            $runtime = $this->buildNewPpmRuntime($bucketNow);
         }
 
         /** @var CarbonImmutable $lastBucket */
@@ -264,9 +251,26 @@ class MqttSubscribe extends Command
             ? $runtime['last_bucket']
             : CarbonImmutable::parse((string) $runtime['last_bucket'], self::PPM_TIMEZONE);
 
+        /** @var CarbonImmutable $cycleStartedAt */
+        $cycleStartedAt = $runtime['cycle_started_at'] instanceof CarbonImmutable
+            ? $runtime['cycle_started_at']
+            : CarbonImmutable::parse((string) $runtime['cycle_started_at'], self::PPM_TIMEZONE);
+
+        /** @var CarbonImmutable $refillAt */
+        $refillAt = $runtime['refill_at'] instanceof CarbonImmutable
+            ? $runtime['refill_at']
+            : CarbonImmutable::parse((string) $runtime['refill_at'], self::PPM_TIMEZONE);
+
+        $durationSeconds = max(1, (int) ($runtime['duration_seconds'] ?? (int) (self::PPM_DURATION_DAYS_MIN * 86400)));
+        $cycleEnd = $cycleStartedAt->addSeconds($durationSeconds);
+
         if ($bucketNow->lessThanOrEqualTo($lastBucket)) {
             $simulated = (float) ($runtime['value'] ?? $runtime['start']);
-            $simulated = $this->applyIncomingSpikeStep($simulated, $runtime, $bucketNow->hour);
+            if ($bucketNow->lessThan($cycleEnd)) {
+                $simulated = $this->applyIncomingSpikeStep($simulated, $runtime, $bucketNow->hour);
+            } else {
+                $simulated = $this->simulateLowPpmValue($simulated, $runtime);
+            }
             $runtime['value'] = round($simulated);
             $payload['tds'] = (int) round($runtime['value']);
             $payload['tds_mentah'] = (int) round($runtime['value']);
@@ -280,13 +284,33 @@ class MqttSubscribe extends Command
         $current = (float) ($runtime['value'] ?? $runtime['start']);
         $cursor = $lastBucket;
 
+        // Refill hanya saat pagi, setelah fase turun selesai.
+        if ($bucketNow->greaterThanOrEqualTo($refillAt)) {
+            $runtime = $this->buildNewPpmRuntime($refillAt);
+            $current = (float) ($runtime['value'] ?? $runtime['start']);
+            $cursor = $refillAt;
+            $durationSeconds = max(1, (int) ($runtime['duration_seconds'] ?? (int) (self::PPM_DURATION_DAYS_MIN * 86400)));
+            $cycleStartedAt = $runtime['cycle_started_at'] instanceof CarbonImmutable
+                ? $runtime['cycle_started_at']
+                : CarbonImmutable::parse((string) $runtime['cycle_started_at'], self::PPM_TIMEZONE);
+            $cycleEnd = $cycleStartedAt->addSeconds($durationSeconds);
+        }
+
         while ($cursor->lessThan($bucketNow)) {
             $next = $cursor->addSeconds(self::PPM_INTERVAL_SECONDS);
-            $current = $this->nextSimulatedPpmValue($runtime, $current, $next);
+            if ($next->lessThan($cycleEnd)) {
+                $current = $this->nextSimulatedPpmValue($runtime, $current, $next);
+            } else {
+                $current = $this->simulateLowPpmValue($current, $runtime);
+            }
             $cursor = $next;
         }
 
-        $current = $this->applyIncomingSpikeStep($current, $runtime, $bucketNow->hour);
+        if ($bucketNow->lessThan($cycleEnd)) {
+            $current = $this->applyIncomingSpikeStep($current, $runtime, $bucketNow->hour);
+        } else {
+            $current = $this->simulateLowPpmValue($current, $runtime);
+        }
         $runtime['value'] = round($current);
         $runtime['last_bucket'] = $bucketNow;
         $this->ppmRuntime[$runtimeKey] = $runtime;
@@ -303,6 +327,44 @@ class MqttSubscribe extends Command
         $this->line($bucketNow->format('H:i:s') . ' ' . (int) $payload['tds']);
 
         return $payload;
+    }
+
+    protected function buildNewPpmRuntime(CarbonImmutable $startedAtWita): array
+    {
+        $durationSeconds = (int) round(self::PPM_DURATION_DAYS_MIN * 86400);
+        $startPpm = round($this->randomFloat(self::PPM_START_MIN, self::PPM_START_MAX));
+        $targetPpm = round($this->randomFloat(self::PPM_TARGET_MIN, self::PPM_TARGET_MAX));
+        $cycleEnd = $startedAtWita->addSeconds($durationSeconds);
+
+        return [
+            'cycle_started_at' => $startedAtWita,
+            'start' => $startPpm,
+            'target' => $targetPpm,
+            'duration_seconds' => $durationSeconds,
+            'value' => $startPpm,
+            'last_bucket' => $startedAtWita,
+            'refill_at' => $this->resolveNextRefillAtWita($cycleEnd),
+        ];
+    }
+
+    protected function resolveNextRefillAtWita(CarbonImmutable $after): CarbonImmutable
+    {
+        $candidate = $after->setHour(self::PPM_REFILL_HOUR_WITA)->setMinute(0)->setSecond(0);
+        if ($candidate->lessThanOrEqualTo($after)) {
+            $candidate = $candidate->addDay();
+        }
+
+        return $candidate;
+    }
+
+    protected function simulateLowPpmValue(float $current, array $runtime): float
+    {
+        $target = (float) ($runtime['target'] ?? self::PPM_TARGET_MIN);
+        $lowMin = max(380.0, $target - 20.0);
+        $lowMax = $target + 10.0;
+
+        $next = ($current * 0.7) + ($target * 0.3) + $this->randomFloat(-0.25, 0.25);
+        return $this->clamp($next, $lowMin, $lowMax);
     }
 
     protected function nextSimulatedPpmValue(array $runtime, float $current, CarbonImmutable $atWita): float
