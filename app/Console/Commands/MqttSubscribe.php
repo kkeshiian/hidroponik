@@ -158,7 +158,13 @@ class MqttSubscribe extends Command
             ? $this->resolveSleepSeconds($payload)
             : null;
 
-        $this->markDeviceSignal($kebun, $state, $mode, $sleepSeconds);
+        $normalizedKebun = $this->normalizeKebun($kebun);
+        $this->markDeviceSignal($normalizedKebun, $state, $mode, $sleepSeconds);
+
+        $mirrorKebun = $this->resolveMirrorDevice($normalizedKebun);
+        if ($mirrorKebun !== null) {
+            $this->markDeviceSignal($mirrorKebun, $state, $mode, $sleepSeconds);
+        }
     }
 
     protected function handlePublishMessage(string $kebun, string $topic, string $message, int $qos, bool $retained): void
@@ -726,7 +732,7 @@ class MqttSubscribe extends Command
             $lastSeen = (int) ($runtime['last_mqtt_at'] ?? 0);
             $sleepUntil = $runtime['sleep_until'] ?? null;
             $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
-            $isPrimaryDevice = in_array($device, ['kebun-1', 'kebun-2'], true);
+            $isPrimaryDevice = in_array($device, ['kebun-a', 'kebun-b', 'kebun-1', 'kebun-2'], true);
 
             // If deep sleep window has ended, auto-resume to ACTIVE profile.
             if ($state === 'SLEEPING' && is_int($sleepUntil) && $now > $sleepUntil) {
@@ -780,14 +786,14 @@ class MqttSubscribe extends Command
     protected function ensurePrimaryPowerDevices(): void
     {
         $now = time();
-        foreach (['kebun-1', 'kebun-2'] as $device) {
+        foreach (['kebun-a', 'kebun-b'] as $device) {
             $runtime = $this->powerRuntime[$device] ?? [
                 'enabled' => true,
                 'last_mqtt_at' => $now,
                 'last_generated_at' => 0,
-                'state' => 'ACTIVE',
+                'state' => 'SLEEPING',
                 'mode' => 'AUTO',
-                'sleep_until' => null,
+                'sleep_until' => $now + self::SLEEP_UNSTABLE_SECONDS,
                 'prev_current' => 95.0,
             ];
 
@@ -796,6 +802,12 @@ class MqttSubscribe extends Command
             }
             if (!isset($runtime['last_mqtt_at'])) {
                 $runtime['last_mqtt_at'] = $now;
+            }
+            if (!isset($runtime['state'])) {
+                $runtime['state'] = 'SLEEPING';
+            }
+            if (!isset($runtime['sleep_until']) && ($runtime['state'] ?? null) === 'SLEEPING') {
+                $runtime['sleep_until'] = $now + self::SLEEP_UNSTABLE_SECONDS;
             }
 
             $this->powerRuntime[$device] = $runtime;
