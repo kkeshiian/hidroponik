@@ -305,6 +305,12 @@ async function handleMessage(pool, client, topic, message) {
     client.publish(previewTopic, JSON.stringify(previewData), { qos: 0 });
     log('debug', `Published preview to ${previewTopic}`);
     
+    // Validate sensor values: skip if TDS is 0 or null (invalid reading)
+    if (tdsCalibrated === 0 || tdsCalibrated === null) {
+      log('warn', `Save skipped: invalid TDS value (${tdsCalibrated}) from ${kebun}`);
+      return;
+    }
+
     // Check if data should be saved based on interval
     if (!shouldSaveData(kebun)) {
       log('debug', `Save skipped (interval: ${currentInterval})`);
