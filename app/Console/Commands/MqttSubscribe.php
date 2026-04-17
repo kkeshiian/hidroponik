@@ -29,6 +29,10 @@ class MqttSubscribe extends Command
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
+    private const TELEMETRY_MIN_GAP_SECONDS = 58;
+    private const TELEMETRY_MIN_TDS = 354.0;
+    private const PH_MIN = 5.0;
+    private const PH_MAX = 8.0;
 
     /** @var array<string, array<string, mixed>> */
     private array $powerRuntime = [];
@@ -38,6 +42,9 @@ class MqttSubscribe extends Command
 
     /** @var array<string, array{last_saved_at: Carbon, last_tds: float|null, stable_lock_until?: Carbon|null}> */
     private array $telemetryRateRuntime = [];
+
+    /** @var array<string, array{value: float, at: Carbon}> */
+    private array $phRuntime = [];
 
     /**
      * The name and signature of the console command.
@@ -170,7 +177,7 @@ class MqttSubscribe extends Command
             'device_mode' => $data['device_mode'] ?? null,
             'current_mode' => $data['current_mode'] ?? null,
             'suhu' => $data['suhu'] ?? null,
-            'ph' => $data['ph'] ?? null,
+            'ph' => $this->normalizePhValue($kebun, $data['ph'] ?? null),
             'tds' => $data['tds'] ?? null,
             'cal_ph_netral' => $data['cal_ph_netral'] ?? null,
             'cal_ph_asam' => $data['cal_ph_asam'] ?? null,
@@ -199,7 +206,10 @@ class MqttSubscribe extends Command
         if ($mirrorKebun !== null) {
             $mirroredRawPayload = $rawPayload;
             $mirroredRawPayload['kebun'] = $mirrorKebun;
-            $mirroredRawPayload['ph'] = $this->withMirroredValueOffset($rawPayload['ph'] ?? null, 1.2, 3.2, 0.0, 14.0, 2);
+            $mirroredRawPayload['ph'] = $this->normalizePhValue(
+                $mirrorKebun,
+                $this->withMirroredValueOffset($rawPayload['ph'] ?? null, 0.08, 0.35, self::PH_MIN, self::PH_MAX, 2)
+            );
             $mirroredRawPayload['suhu'] = $this->withMirroredValueOffset($rawPayload['suhu'] ?? null, 1.2, 3.2, 0.0, null, 2);
             $mirroredRawPayload['tds'] = $this->withMirroredTdsOffset($rawPayload['tds'] ?? null);
             $mirroredRawPayload['tds_mentah'] = $mirroredRawPayload['tds'];
@@ -584,6 +594,57 @@ class MqttSubscribe extends Command
         return round($result, $precision);
     }
 
+    protected function normalizePhValue(?string $kebun, mixed $ph): float
+    {
+        $deviceKey = strtolower(trim((string) $kebun));
+        $now = now();
+
+        $previous = $this->phRuntime[$deviceKey] ?? null;
+        $previousValue = is_array($previous) ? (float) ($previous['value'] ?? 0.0) : null;
+        $previousAt = is_array($previous) && ($previous['at'] ?? null) instanceof Carbon
+            ? $previous['at']
+            : null;
+
+        $baseline = $previousValue;
+        if ($baseline === null) {
+            $baseline = $this->randomFloat(5.8, 6.8);
+        }
+
+        if (is_numeric($ph)) {
+            $incoming = (float) $ph;
+
+            if ($incoming < self::PH_MIN) {
+                $incoming = self::PH_MIN + $this->randomFloat(0.00, 0.20);
+            } elseif ($incoming > self::PH_MAX) {
+                $incoming = self::PH_MAX - $this->randomFloat(0.00, 0.20);
+            }
+
+            $secondsSincePrev = 10;
+            if ($previousAt instanceof Carbon) {
+                $secondsSincePrev = max(1, $previousAt->diffInSeconds($now, false));
+            }
+
+            // Keep pH movement smooth: gradual drift with occasional moderate correction.
+            $maxStep = min(0.28, 0.05 + ($secondsSincePrev / 120));
+            $delta = $incoming - $baseline;
+            if (abs($delta) > $maxStep) {
+                $incoming = $baseline + ($delta > 0 ? $maxStep : -$maxStep);
+            }
+
+            $result = round($this->clamp($incoming, self::PH_MIN, self::PH_MAX), 2);
+        } else {
+            $fallback = $baseline + $this->randomFloat(-0.06, 0.06);
+            $result = round($this->clamp($fallback, self::PH_MIN, self::PH_MAX), 2);
+        }
+
+        $this->phRuntime[$deviceKey] = [
+            'value' => $result,
+            'at' => $now->copy(),
+        ];
+
+        return $result;
+    }
+
     
 
     protected function markDeviceSignal(string $device, ?string $state, ?string $mode, ?int $sleepSeconds): void
@@ -763,35 +824,36 @@ class MqttSubscribe extends Command
 
     protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $recordedAt, mixed $tds): bool
     {
-        if ($kebun === null || !is_numeric($tds)) {
-            return true;
-        }
-
-        $currentTds = (float) $tds;
-        $runtime = $this->telemetryRateRuntime[$kebun] ?? null;
-        if (!is_array($runtime)) {
-            return true;
-        }
-
-        $stableLockUntil = $runtime['stable_lock_until'] ?? null;
-        if ($stableLockUntil instanceof Carbon && $recordedAt->lessThan($stableLockUntil)) {
+        if (!is_numeric($tds) || (float) $tds <= self::TELEMETRY_MIN_TDS) {
             return false;
         }
 
-        $lastSavedAt = $runtime['last_saved_at'] ?? null;
-        if (!$lastSavedAt instanceof Carbon) {
+        if ($kebun === null) {
             return true;
         }
 
-        $lastTds = isset($runtime['last_tds']) && is_numeric($runtime['last_tds'])
-            ? (float) $runtime['last_tds']
-            : null;
+        $runtime = $this->telemetryRateRuntime[$kebun] ?? null;
+        if (is_array($runtime)) {
+            $lastSavedAt = $runtime['last_saved_at'] ?? null;
+            if ($lastSavedAt instanceof Carbon) {
+                $elapsedSeconds = $lastSavedAt->diffInSeconds($recordedAt, false);
+                if ($elapsedSeconds < self::TELEMETRY_MIN_GAP_SECONDS) {
+                    return false;
+                }
+            }
+        }
 
-        $deltaTds = $lastTds !== null ? ($currentTds - $lastTds) : null;
-        $intervalSeconds = $this->resolveTelemetrySaveIntervalSeconds($currentTds, $deltaTds);
-        $elapsedSeconds = $lastSavedAt->diffInSeconds($recordedAt, false);
+        $lastSavedFromDb = Telemetry::query()
+            ->where('kebun', $kebun)
+            ->latest('recorded_at')
+            ->first(['recorded_at']);
 
-        if ($elapsedSeconds < $intervalSeconds) {
+        if ($lastSavedFromDb === null || $lastSavedFromDb->recorded_at === null) {
+            return true;
+        }
+
+        $elapsedSinceDb = $lastSavedFromDb->recorded_at->diffInSeconds($recordedAt, false);
+        if ($elapsedSinceDb < self::TELEMETRY_MIN_GAP_SECONDS) {
             return false;
         }
 
@@ -1034,10 +1096,12 @@ class MqttSubscribe extends Command
             $kebun = $payload['kebun'] ?? null;
 
             if (!$this->shouldSaveTelemetryByTdsRule($kebun, $recordedAt, $payload['tds'] ?? null)) {
-                Log::info('Telemetry skipped by TDS interval rule', [
+                Log::info('Telemetry skipped by TDS/interval rule', [
                     'kebun' => $kebun,
                     'recorded_at' => $recordedAt->toDateTimeString(),
                     'tds' => $payload['tds'] ?? null,
+                    'min_tds_required' => self::TELEMETRY_MIN_TDS,
+                    'min_gap_seconds' => self::TELEMETRY_MIN_GAP_SECONDS,
                 ]);
                 return;
             }
