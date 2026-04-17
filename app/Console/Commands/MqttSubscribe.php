@@ -28,12 +28,21 @@ class MqttSubscribe extends Command
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
+    private const TELEMETRY_MAX_WRITES_PER_SECOND = 2;
+    private const TELEMETRY_WRITE_COOLDOWN_SECONDS = 5;
 
     /** @var array<string, array<string, mixed>> */
     private array $powerRuntime = [];
 
     /** @var array<string, array<string, mixed>> */
     private array $ppmRuntime = [];
+
+    private ?int $telemetryWriteSecond = null;
+
+    /** @var array<string, bool> */
+    private array $telemetryWrittenDevices = [];
+
+    private ?int $telemetryCooldownUntil = null;
 
     /**
      * The name and signature of the console command.
@@ -180,13 +189,15 @@ class MqttSubscribe extends Command
         $rawPayload = $this->applySimulatedPpmIfNeeded($kebun, $rawPayload);
 
         $calibratedPayload = $this->applyCalibration($kebun, $rawPayload);
-        $this->saveTelemetry($calibratedPayload);
+        $savedPrimary = $this->saveTelemetry($calibratedPayload);
 
-        Cache::put("telemetry:{$kebun}", $calibratedPayload, now()->addMinutes(60));
         $index = Cache::get('telemetry:index', []);
-        if (!in_array($kebun, $index, true)) {
-            $index[] = $kebun;
-            Cache::put('telemetry:index', $index, now()->addHours(6));
+        if ($savedPrimary) {
+            Cache::put("telemetry:{$kebun}", $calibratedPayload, now()->addMinutes(60));
+            if (!in_array($kebun, $index, true)) {
+                $index[] = $kebun;
+                Cache::put('telemetry:index', $index, now()->addHours(6));
+            }
         }
 
         // Jika perangkat 1 kirim data, buat data kembaran untuk perangkat 2
@@ -212,12 +223,14 @@ class MqttSubscribe extends Command
             }
 
             $mirroredPayload = $this->applyCalibration($mirrorKebun, $mirroredRawPayload);
-            $this->saveTelemetry($mirroredPayload);
+            $savedMirror = $this->saveTelemetry($mirroredPayload);
 
-            Cache::put("telemetry:{$mirrorKebun}", $mirroredPayload, now()->addMinutes(60));
-            if (!in_array($mirrorKebun, $index, true)) {
-                $index[] = $mirrorKebun;
-                Cache::put('telemetry:index', $index, now()->addHours(6));
+            if ($savedMirror) {
+                Cache::put("telemetry:{$mirrorKebun}", $mirroredPayload, now()->addMinutes(60));
+                if (!in_array($mirrorKebun, $index, true)) {
+                    $index[] = $mirrorKebun;
+                    Cache::put('telemetry:index', $index, now()->addHours(6));
+                }
             }
         }
 
@@ -809,9 +822,84 @@ class MqttSubscribe extends Command
         return $payload;
     }
 
-    protected function saveTelemetry(array $payload): void
+    protected function normalizeTelemetryDevice(?string $kebun): ?string
+    {
+        $value = strtolower(trim((string) $kebun));
+
+        if (in_array($value, ['kebun-1', 'kebun-a', 'a'], true)) {
+            return 'kebun-1';
+        }
+
+        if (in_array($value, ['kebun-2', 'kebun-b', 'b'], true)) {
+            return 'kebun-2';
+        }
+
+        return null;
+    }
+
+    protected function canWriteTelemetryNow(?string $kebun): bool
+    {
+        $canonicalDevice = $this->normalizeTelemetryDevice($kebun);
+        if ($canonicalDevice === null) {
+            Log::info('Telemetry skipped by limiter: unsupported device', ['kebun' => $kebun]);
+            return false;
+        }
+
+        $nowTs = time();
+        if ($this->telemetryCooldownUntil !== null && $nowTs < $this->telemetryCooldownUntil) {
+            Log::info('Telemetry skipped by limiter: cooldown active', [
+                'kebun' => $kebun,
+                'cooldown_until' => date('Y-m-d H:i:s', $this->telemetryCooldownUntil),
+            ]);
+            return false;
+        }
+
+        if ($this->telemetryWriteSecond !== $nowTs) {
+            $this->telemetryWriteSecond = $nowTs;
+            $this->telemetryWrittenDevices = [];
+        }
+
+        if (isset($this->telemetryWrittenDevices[$canonicalDevice])) {
+            Log::info('Telemetry skipped by limiter: device already written in this second', ['kebun' => $kebun]);
+            return false;
+        }
+
+        if (count($this->telemetryWrittenDevices) >= self::TELEMETRY_MAX_WRITES_PER_SECOND) {
+            Log::info('Telemetry skipped by limiter: max writes per second reached', ['kebun' => $kebun]);
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function markTelemetryWritten(?string $kebun): void
+    {
+        $canonicalDevice = $this->normalizeTelemetryDevice($kebun);
+        if ($canonicalDevice === null) {
+            return;
+        }
+
+        $nowTs = time();
+        if ($this->telemetryWriteSecond !== $nowTs) {
+            $this->telemetryWriteSecond = $nowTs;
+            $this->telemetryWrittenDevices = [];
+        }
+
+        $this->telemetryWrittenDevices[$canonicalDevice] = true;
+
+        if (count($this->telemetryWrittenDevices) >= self::TELEMETRY_MAX_WRITES_PER_SECOND) {
+            $this->telemetryCooldownUntil = $nowTs + self::TELEMETRY_WRITE_COOLDOWN_SECONDS;
+        }
+    }
+
+    protected function saveTelemetry(array $payload): bool
     {
         try {
+            $kebun = $payload['kebun'] ?? null;
+            if (!$this->canWriteTelemetryNow($kebun)) {
+                return false;
+            }
+
             $serverNow = now();
             $recordedAt = $serverNow->copy();
             $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
@@ -830,7 +918,7 @@ class MqttSubscribe extends Command
                             'server_time' => $serverNow->toDateTimeString(),
                             'tds' => $payload['tds'] ?? null,
                         ]);
-                        return;
+                        return false;
                     }
 
                     // Jika jam perangkat melenceng jauh dari server, pakai waktu server.
@@ -845,7 +933,6 @@ class MqttSubscribe extends Command
 
             // Normalize to second precision so duplicate payloads in the same second are ignored.
             $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
-            $kebun = $payload['kebun'] ?? null;
 
             $created = Telemetry::firstOrCreate(
                 [
@@ -865,17 +952,20 @@ class MqttSubscribe extends Command
             );
 
             if ($created->wasRecentlyCreated) {
+                $this->markTelemetryWritten($kebun);
                 Log::info('Telemetry saved', ['id' => $created->id ?? null]);
-                return;
+                return true;
             }
 
             Log::info('Telemetry duplicate skipped', [
                 'kebun' => $kebun,
                 'recorded_at' => $recordedAt->toDateTimeString(),
             ]);
+            return false;
         } catch (\Exception $e) {
             Log::error('Failed to save telemetry to database: ' . $e->getMessage());
             echo "DB save error: " . $e->getMessage() . "\n";
+            return false;
         }
     }
 }
