@@ -214,10 +214,32 @@
         }
 
         if (effective) {
-            return effective.toLocaleString('sv-SE', {
+            // Format ke Asia/Jakarta kemudian tambah 1 jam untuk WITA
+            let formatted = effective.toLocaleString('sv-SE', {
                 timeZone: 'Asia/Jakarta',
                 hour12: false,
             }).replace(',', '');
+            
+            // Parse formatted string dan tambah 1 jam
+            const parts = formatted.split(' ');
+            const datePart = parts[0];
+            const timePart = parts[1];
+            
+            if (timePart) {
+                const timeComponents = timePart.split(':');
+                if (timeComponents.length >= 2) {
+                    let hours = parseInt(timeComponents[0], 10);
+                    const minutes = timeComponents[1];
+                    const seconds = timeComponents[2] || '00';
+                    
+                    hours = (hours + 1) % 24; // Add 1 hour, wrap around at 24
+                    const hoursStr = String(hours).padStart(2, '0');
+                    
+                    return `${datePart} ${hoursStr}:${minutes}:${seconds}`;
+                }
+            }
+            
+            return formatted;
         }
 
         return (value ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');
@@ -243,10 +265,32 @@
         }
 
         if (effective) {
-            return effective.toLocaleString('sv-SE', {
+            // Format ke Asia/Jakarta kemudian tambah 1 jam untuk WITA
+            let formatted = effective.toLocaleString('sv-SE', {
                 timeZone: 'Asia/Jakarta',
                 hour12: false,
             }).replace(',', '');
+            
+            // Parse formatted string dan tambah 1 jam
+            const parts = formatted.split(' ');
+            const datePart = parts[0];
+            const timePart = parts[1];
+            
+            if (timePart) {
+                const timeComponents = timePart.split(':');
+                if (timeComponents.length >= 2) {
+                    let hours = parseInt(timeComponents[0], 10);
+                    const minutes = timeComponents[1];
+                    const seconds = timeComponents[2] || '00';
+                    
+                    hours = (hours + 1) % 24; // Add 1 hour, wrap around at 24
+                    const hoursStr = String(hours).padStart(2, '0');
+                    
+                    return `${datePart} ${hoursStr}:${minutes}:${seconds}`;
+                }
+            }
+            
+            return formatted;
         }
 
         return (value ?? '').toString().replace(/\.\d+Z?$/, '').replace('T', ' ').replace('Z', '');

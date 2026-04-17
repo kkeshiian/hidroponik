@@ -319,7 +319,7 @@ class LogController extends Controller
                         $localTime = '';
                         if ($effectiveAt) {
                             $localDate = $effectiveAt->copy()->timezone(config('app.timezone'))->format('Y-m-d');
-                            $localTime = $effectiveAt->copy()->timezone(config('app.timezone'))->format('H:i:s');
+                            $localTime = $effectiveAt->copy()->timezone(config('app.timezone'))->addHour()->format('H:i:s');
                         }
 
                         fputcsv($handle, [
@@ -424,8 +424,12 @@ class LogController extends Controller
 
                 $query->chunk(300, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
+                        $timestamp = $r->timestamp;
+                        if ($timestamp) {
+                            $timestamp = $timestamp->copy()->timezone(config('app.timezone'))->addHour()->format('Y-m-d H:i:s');
+                        }
                         fputcsv($handle, [
-                            $r->timestamp,
+                            $timestamp,
                             $r->device_name,
                             round(((float) $r->current_ma) / 1000, 6),
                         ]);

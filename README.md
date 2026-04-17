@@ -1,58 +1,116 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Hidroponik Alfa - Deploy dan Operasional via Termius
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Panduan ini adalah dokumentasi terbaru untuk menjalankan seluruh aplikasi dan service pada hosting Linux melalui Termius.
 
-## Panduan Run via Termius (Server Linux)
+## 1. Ringkasan Arsitektur Service
 
-Panduan ini untuk menjalankan project di server lewat Termius, termasuk service MQTT untuk Power Consumption.
+- Web app Laravel (Nginx/Apache + PHP-FPM)
+- Frontend asset Vite (hasil build static)
+- Database MySQL/MariaDB
+- MQTT subscriber utama: `php artisan mqtt:subscribe` (wajib aktif untuk telemetry realtime dan Power Consumption)
 
-### A. First Setup (sekali saat deploy awal)
+Service tambahan yang tersedia, tapi tidak wajib untuk production utama:
+
+- `php artisan mqtt:listen`
+- `node ingest-mqtt.js`
+- `node node-subscriber.js`
+
+Penting:
+
+- Jalankan satu pipeline subscriber saja untuk production.
+- Rekomendasi: hanya `mqtt:subscribe` via PM2.
+- Menjalankan beberapa subscriber sekaligus dapat menyebabkan data ganda.
+
+## 2. Kebutuhan Server
+
+Minimal software di server:
+
+- Git
+- PHP 8.2+ beserta extension umum Laravel
+- Composer 2+
+- Node.js 20+ dan npm
+- MySQL/MariaDB
+- PM2 (global npm package)
+
+## 3. First Setup (Sekali Saat Deploy Awal)
 
 ```bash
 cd /var/www/hidroponik
+git clone <repo-url> .
 cp .env.example .env
+
 composer install --no-dev --optimize-autoloader
-npm install
+npm ci
+
 php artisan key:generate
+php artisan storage:link
 php artisan migrate --force
+
 npm run build
+php artisan optimize:clear
 php artisan optimize
 ```
 
-Pastikan konfigurasi di file .env sudah sesuai:
+Set permission storage dan cache:
+
+```bash
+sudo chown -R www-data:www-data /var/www/hidroponik
+sudo find /var/www/hidroponik/storage -type d -exec chmod 775 {} \;
+sudo find /var/www/hidroponik/bootstrap/cache -type d -exec chmod 775 {} \;
+```
+
+## 4. Konfigurasi Environment
+
+Isi file `.env` sesuai server:
 
 ```env
+APP_NAME="Hidroponik Alfa"
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://domain-kamu
-APP_TIMEZONE=Asia/Singapore
+APP_TIMEZONE=Asia/Makassar
 
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=hidroponik_db
-DB_USERNAME=...
-DB_PASSWORD=...
+DB_USERNAME=your_db_user
+DB_PASSWORD=your_db_password
 
+MQTT_HOST=broker.emqx.io
 MQTT_BROKER=broker.emqx.io
 MQTT_PORT=1883
+MQTT_USERNAME=
+MQTT_PASSWORD=
 MQTT_TOPIC=hidroganik/+/publish
 ```
 
-### B. Jalankan MQTT Subscriber (wajib untuk Power Consumption)
+Catatan:
 
-Power Consumption di halaman Log membutuhkan command ini aktif terus:
+- Gunakan timezone yang sama dengan kebutuhan operasional perangkat.
+- `MQTT_HOST` dan `MQTT_BROKER` keduanya diisi untuk kompatibilitas command lama dan baru.
+
+## 5. Menjalankan Web App
+
+Gunakan web server (Nginx/Apache) yang mengarah ke folder `public`.
+
+Untuk validasi cepat dari Termius:
 
 ```bash
-php artisan mqtt:subscribe
+php artisan about
+php artisan route:list
 ```
 
-Untuk production, gunakan PM2 agar auto restart jika crash/disconnect.
+## 6. Menjalankan MQTT Service (Wajib)
+
+Project sudah menyediakan script PM2 berikut di `package.json`:
+
+- `prod:mqtt:up`
+- `prod:mqtt:restart`
+- `prod:mqtt:logs`
+- `prod:mqtt:down`
+- `prod:mqtt:delete`
+- `prod:mqtt:save`
 
 Install PM2 (sekali):
 
@@ -60,125 +118,125 @@ Install PM2 (sekali):
 npm i -g pm2
 ```
 
-Start service MQTT via script yang sudah disiapkan project:
+Start service subscriber utama:
 
 ```bash
+cd /var/www/hidroponik
 npm run prod:mqtt:up
 ```
 
-Daftarkan auto-start saat server reboot:
+Enable auto start saat reboot:
 
 ```bash
 pm2 startup
 npm run prod:mqtt:save
 ```
 
-### C. Perintah Harian di Termius
-
-Lihat status service PM2:
+Perintah harian:
 
 ```bash
 pm2 status
-```
-
-Lihat log MQTT realtime:
-
-```bash
 npm run prod:mqtt:logs
-```
-
-Restart MQTT subscriber:
-
-```bash
 npm run prod:mqtt:restart
-```
-
-Stop sementara:
-
-```bash
 npm run prod:mqtt:down
 ```
 
-Hapus service dari PM2:
-
-```bash
-npm run prod:mqtt:delete
-```
-
-### D. Update Kode (setiap deploy)
+## 7. Deploy Update (Setiap Rilis)
 
 ```bash
 cd /var/www/hidroponik
+
 git pull
+
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
+
 npm ci
 npm run build
+
 php artisan optimize:clear
 php artisan optimize
+
 npm run prod:mqtt:restart
 ```
 
-### E. Lokasi Log Penting
+Jika ada perubahan env:
 
-- storage/logs/laravel.log
-- storage/logs/mqtt-service.log
-- storage/logs/mqtt-service-error.log
+```bash
+pm2 restart hidroponik-mqtt --update-env
+```
 
-### F. Cek Cepat Jika Power Consumption Tidak Update
+## 8. Database dan Integritas Data Telemetry
 
-1. Cek PM2 status: pm2 status
-2. Cek log subscriber: npm run prod:mqtt:logs
-3. Pastikan MQTT topic benar di .env: MQTT_TOPIC=hidroganik/+/publish
-4. Pastikan database tersambung dan migrasi power_logs sudah ada.
+Versi terbaru menambahkan proteksi agar data tidak dobel per perangkat pada timestamp yang sama, dan perangkat berbeda tidak saling menimpa.
 
-## About Laravel
+Checklist wajib:
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```bash
+php artisan migrate --force
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Pastikan migrasi terbaru sudah masuk, termasuk unique key kombinasi:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- `kebun`
+- `recorded_at`
 
-## Learning Laravel
+## 9. Operasional Service Lain (Opsional)
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Tersedia command/testing lain:
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+php artisan mqtt:listen
+node ingest-mqtt.js
+node node-subscriber.js
+```
 
-## Laravel Sponsors
+Gunakan hanya untuk kebutuhan khusus atau debugging.
+Jangan dijalankan bersamaan dengan service production utama jika tidak diperlukan.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## 10. Lokasi Log Penting
 
-### Premium Partners
+- `storage/logs/laravel.log`
+- `storage/logs/mqtt-service.log`
+- `storage/logs/mqtt-service-error.log`
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Pantau log PM2:
 
-## Contributing
+```bash
+pm2 logs hidroponik-mqtt --lines 200
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## 11. Troubleshooting Cepat
 
-## Code of Conduct
+Jika data log tidak update atau power consumption berhenti:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. Cek service hidup: `pm2 status`
+2. Cek log subscriber: `npm run prod:mqtt:logs`
+3. Pastikan topic sesuai: `MQTT_TOPIC=hidroganik/+/publish`
+4. Pastikan DB terkoneksi dan migrasi sukses: `php artisan migrate:status`
+5. Pastikan hanya satu subscriber utama yang aktif.
 
-## Security Vulnerabilities
+Jika terjadi data ganda:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+1. Stop semua subscriber selain yang utama.
+2. Jalankan ulang subscriber utama via PM2.
+3. Verifikasi data masuk per perangkat di halaman log.
 
-## License
+## 12. Quick Command Reference
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+# Start production MQTT service
+npm run prod:mqtt:up
+
+# Restart service
+npm run prod:mqtt:restart
+
+# View logs
+npm run prod:mqtt:logs
+
+# Stop service
+npm run prod:mqtt:down
+
+# Save PM2 process list
+npm run prod:mqtt:save
+```
