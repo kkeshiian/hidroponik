@@ -933,9 +933,9 @@ class MqttSubscribe extends Command
             $spikeChance = 0.01;
             $blendRatio = 0.42;
         } else {
-            $target = $this->randomFloat(135, 255);
-            $jitter = $this->randomFloat(-5, 5);
-            $spikeChance = 0.05;
+            $target = $this->randomFloat(150, 285);
+            $jitter = $this->randomFloat(-6, 6);
+            $spikeChance = 0.07;
             $blendRatio = 0.40;
         }
 
@@ -952,7 +952,7 @@ class MqttSubscribe extends Command
         } elseif ($mode === 'CALIBRATION' || $state === 'CALIBRATION') {
             $current = $this->clamp($current, 105, 190);
         } else {
-            $current = $this->clamp($current, 120, 280);
+            $current = $this->clamp($current, 120, 300);
         }
 
         $runtime['prev_current'] = $current;

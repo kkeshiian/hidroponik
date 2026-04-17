@@ -88,6 +88,21 @@ class LogController extends Controller
         return [$kebun];
     }
 
+    private function normalizeKebunLabel(?string $deviceName): string
+    {
+        $value = strtolower(trim((string) $deviceName));
+
+        if ($value === 'kebun-a' || $value === 'kebun-1' || $value === 'a') {
+            return 'kebun-a';
+        }
+
+        if ($value === 'kebun-b' || $value === 'kebun-2' || $value === 'b') {
+            return 'kebun-b';
+        }
+
+        return (string) $deviceName;
+    }
+
     public function index(Request $request)
     {
         try {
@@ -387,20 +402,22 @@ class LogController extends Controller
 
             foreach ($rows->sortBy('timestamp')->values() as $row) {
                 $device = (string) ($row->device_name ?? 'unknown');
+                $normalizedDevice = $this->normalizeKebunLabel($device);
                 $currentMa = (float) ($row->current_ma ?? 0.0);
                 $currentA = $currentMa / 1000.0;
-                $voltageV = $this->estimatedVoltage($device, $row->timestamp ?? $row->created_at);
+                $voltageV = $this->estimatedVoltage($normalizedDevice, $row->timestamp ?? $row->created_at);
                 $powerW = $voltageV * $currentA;
                 $deltaWh = $powerW * ($intervalSeconds / 3600.0);
 
-                $energyByDevice[$device] = ($energyByDevice[$device] ?? 0.0) + $deltaWh;
+                $energyByDevice[$normalizedDevice] = ($energyByDevice[$normalizedDevice] ?? 0.0) + $deltaWh;
 
                 $computedRows[] = array_merge($row->toArray(), [
+                    'device_name' => $normalizedDevice,
                     'current_a' => round($currentA, 6),
                     'voltage_v' => round($voltageV, 2),
                     'power_w' => round($powerW, 3),
                     'watt_hour' => round($deltaWh, 5),
-                    'watt_hour_cumulative' => round($energyByDevice[$device], 5),
+                    'watt_hour_cumulative' => round($energyByDevice[$normalizedDevice], 5),
                     'interval_detik' => $intervalSeconds,
                 ]);
             }
@@ -443,7 +460,7 @@ class LogController extends Controller
                         }
                         fputcsv($handle, [
                             $timestamp,
-                            $r->device_name,
+                            $this->normalizeKebunLabel($r->device_name),
                             round(((float) $r->current_ma) / 1000, 6),
                         ]);
                     }
