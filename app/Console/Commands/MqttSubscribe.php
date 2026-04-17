@@ -830,6 +830,29 @@ class MqttSubscribe extends Command
             $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
             $kebun = $payload['kebun'] ?? null;
 
+            // Validation: Reject data with timestamp in the future (more than 5 minutes ahead)
+            $now = Carbon::now();
+            $futureThresholdMinutes = 5;
+            if ($recordedAt->isAfter($now->clone()->addMinutes($futureThresholdMinutes))) {
+                Log::warning('Telemetry rejected: timestamp in future', [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt->toDateTimeString(),
+                    'server_time' => $now->toDateTimeString(),
+                ]);
+                return;
+            }
+
+            // Validation: Reject data with both pH and TDS as 0 (invalid sensor reading)
+            $ph = $payload['ph'] ?? null;
+            $tds = $payload['tds'] ?? null;
+            if ($ph === 0 && $tds === 0) {
+                Log::warning('Telemetry rejected: invalid sensor values (pH=0, TDS=0)', [
+                    'kebun' => $kebun,
+                    'recorded_at' => $recordedAt->toDateTimeString(),
+                ]);
+                return;
+            }
+
             $created = Telemetry::firstOrCreate(
                 [
                     'kebun' => $kebun,
