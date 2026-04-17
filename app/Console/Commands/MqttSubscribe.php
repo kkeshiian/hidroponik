@@ -15,8 +15,7 @@ use PhpMqtt\Client\MqttClient;
 
 class MqttSubscribe extends Command
 {
-    private const POWER_INTERVAL_ACTIVE_SECONDS = 10;
-    private const POWER_INTERVAL_SLEEP_SECONDS = 60;
+    private const POWER_INTERVAL_SECONDS = 5;
     private const PPM_INTERVAL_SECONDS = 5;
     private const PPM_START_HOUR_WITA = 21;
     private const PPM_REFILL_HOUR_WITA = 6;
@@ -674,7 +673,7 @@ class MqttSubscribe extends Command
                 continue;
             }
 
-            $intervalSeconds = $this->getPowerIntervalSeconds($runtime, $now);
+            $intervalSeconds = $this->getPowerIntervalSeconds();
             $lastGeneratedAt = (int) ($runtime['last_generated_at'] ?? 0);
             if (($now - $lastGeneratedAt) < $intervalSeconds) {
                 continue;
@@ -724,17 +723,9 @@ class MqttSubscribe extends Command
         }
     }
 
-    protected function getPowerIntervalSeconds(array $runtime, int $now): int
+    protected function getPowerIntervalSeconds(): int
     {
-        $state = strtoupper((string) ($runtime['state'] ?? 'ACTIVE'));
-        $sleepUntil = $runtime['sleep_until'] ?? null;
-        $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
-
-        if ($state === 'SLEEPING' || $isSleepingWindow) {
-            return self::POWER_INTERVAL_SLEEP_SECONDS;
-        }
-
-        return self::POWER_INTERVAL_ACTIVE_SECONDS;
+        return self::POWER_INTERVAL_SECONDS;
     }
 
     protected function shouldSaveTelemetryByTdsRule(?string $kebun, Carbon $recordedAt, mixed $tds): bool
