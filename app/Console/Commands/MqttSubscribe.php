@@ -179,6 +179,7 @@ class MqttSubscribe extends Command
                         config('app.timezone')
                     );
 
+                    
                     if ($deviceRecordedAt->greaterThan($serverNow->copy()->addMinutes($maxFutureMinutes))) {
                         Log::warning('Telemetry skipped: future device timestamp detected', [
                             'kebun' => $payload['kebun'] ?? null,
