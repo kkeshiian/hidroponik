@@ -203,14 +203,21 @@ class MqttListener extends Command
             }
 
             $normalizedKebun = strtolower(trim((string) $kebun));
+            $mirrorTarget = null;
             if (in_array($normalizedKebun, ['kebun-1', 'kebun-a', 'a'], true)) {
+                $mirrorTarget = 'kebun-2';
+            } elseif (in_array($normalizedKebun, ['kebun-2', 'kebun-b', 'b'], true)) {
+                $mirrorTarget = 'kebun-1';
+            }
+
+            if ($mirrorTarget !== null) {
                 $mirroredRaw = $data;
-                $mirroredRaw['kebun'] = 'kebun-2';
+                $mirroredRaw['kebun'] = $mirrorTarget;
                 $mirroredRaw['mirrored_from'] = $kebun;
 
                 $mirror = Telemetry::firstOrCreate(
                     [
-                        'kebun' => 'kebun-2',
+                        'kebun' => $mirrorTarget,
                         'recorded_at' => $recordedAt,
                     ],
                     [
@@ -226,10 +233,10 @@ class MqttListener extends Command
                 );
 
                 if ($mirror->wasRecentlyCreated) {
-                    $this->info("✓ Mirror saved to kebun-2 (ID: {$mirror->id})");
+                    $this->info("✓ Mirror saved to {$mirrorTarget} (ID: {$mirror->id})");
                     Log::info('Telemetry mirror saved', [
                         'id' => $mirror->id,
-                        'kebun' => 'kebun-2',
+                        'kebun' => $mirrorTarget,
                         'source' => $kebun,
                     ]);
                 }

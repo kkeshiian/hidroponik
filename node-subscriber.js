@@ -13,6 +13,9 @@ import { fileURLToPath } from 'url';
       if (['kebun-1', 'kebun-a', 'a'].includes(device)) {
         return 'kebun-2';
       }
+      if (['kebun-2', 'kebun-b', 'b'].includes(device)) {
+        return 'kebun-1';
+      }
       return null;
     }
 // __dirname replacement for ESM
