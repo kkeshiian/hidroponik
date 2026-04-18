@@ -725,6 +725,7 @@ class MqttSubscribe extends Command
             $sleepUntil = $runtime['sleep_until'] ?? null;
             $isSleepingWindow = $state === 'SLEEPING' && is_int($sleepUntil) && $now <= $sleepUntil;
             $isPrimaryDevice = in_array($device, ['kebun-a', 'kebun-b', 'kebun-1', 'kebun-2'], true);
+            $hasRecentSignal = $lastSeen > 0 && ($now - $lastSeen) <= max(self::TELEMETRY_MIN_GAP_SECONDS, 60);
 
             // If deep sleep window has ended, auto-resume to ACTIVE profile.
             if ($state === 'SLEEPING' && is_int($sleepUntil) && $now > $sleepUntil) {
@@ -735,8 +736,9 @@ class MqttSubscribe extends Command
                 $isSleepingWindow = false;
             }
 
-            // Force low-current profile while telemetry is in 600s stable lock window.
-            if ($this->isTelemetryStableLocked($device, $now)) {
+            // Keep low-current profile only when telemetry is stable AND no fresh MQTT signal.
+            // This prevents active devices from being stuck at sleep current (0.00xx A).
+            if ($this->isTelemetryStableLocked($device, $now) && !$hasRecentSignal) {
                 $effectiveState = 'SLEEPING';
             }
 
