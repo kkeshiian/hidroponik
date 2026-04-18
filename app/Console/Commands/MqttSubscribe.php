@@ -137,21 +137,22 @@ class MqttSubscribe extends Command
             return;
         }
 
-        $rawKebun = strtolower(trim((string) $kebun));
-        if (!in_array($rawKebun, ['kebun-a', 'kebun-b'], true)) {
+        $normalizedKebun = $this->normalizeKebun((string) $kebun);
+        if (!in_array($normalizedKebun, ['kebun-a', 'kebun-b'], true)) {
             Log::info('MQTT skipped: only kebun-a and kebun-b are accepted', [
                 'topic' => $topic,
                 'kebun' => $kebun,
+                'normalized_kebun' => $normalizedKebun,
             ]);
             return;
         }
 
         if ($kind === 'publish') {
-            $this->handlePublishMessage($kebun, $topic, $message, $qos, $retained);
+            $this->handlePublishMessage($normalizedKebun, $topic, $message, $qos, $retained);
             return;
         }
 
-        $this->handleStatusMessage($kebun, $message);
+        $this->handleStatusMessage($normalizedKebun, $message);
     }
 
     protected function handleStatusMessage(string $kebun, string $message): void
