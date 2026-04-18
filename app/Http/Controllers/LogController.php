@@ -326,6 +326,7 @@ class LogController extends Controller
 
             try {
                 $query = Telemetry::query()
+                    ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                     ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
                     ->orderBy('recorded_at', 'desc');
                 $query->chunk(200, function ($rows) use ($handle) {
