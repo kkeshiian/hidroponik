@@ -78,14 +78,14 @@ class LogController extends Controller
         $value = strtolower(trim((string) $kebun));
 
         if ($value === 'kebun-a' || $value === 'kebun-1' || $value === 'a') {
-            return ['kebun-a', 'kebun-1', 'a'];
+            return ['kebun-a'];
         }
 
         if ($value === 'kebun-b' || $value === 'kebun-2' || $value === 'b') {
-            return ['kebun-b', 'kebun-2', 'b'];
+            return ['kebun-b'];
         }
 
-        return [$kebun];
+        return ['kebun-a', 'kebun-b'];
     }
 
     private function normalizeKebunLabel(?string $deviceName): string
@@ -107,6 +107,7 @@ class LogController extends Controller
     {
         try {
             $query = Telemetry::query()
+                ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                 ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
 
             $fromDate = $this->normalizedDate($request->input('from'));
@@ -160,6 +161,7 @@ class LogController extends Controller
     {
         try {
             $query = Telemetry::query()
+                ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                 ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             $fromDate = $this->normalizedDate($request->input('from'));
             $toDate = $this->normalizedDate($request->input('to'));
@@ -239,6 +241,7 @@ class LogController extends Controller
             
             // Calculate stats on filtered data
             $statsQuery = Telemetry::query()
+                ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                 ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
             if ($request->filled('kebun')) {
                 $statsQuery->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
@@ -293,7 +296,7 @@ class LogController extends Controller
     public function history()
     {
         // Get last 15 records for each kebun for charts
-        $kebunA = Telemetry::whereIn('kebun', ['kebun-a', 'kebun-1', 'a'])
+        $kebunA = Telemetry::where('kebun', 'kebun-a')
             ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
@@ -301,7 +304,7 @@ class LogController extends Controller
             ->reverse()
             ->values();
 
-        $kebunB = Telemetry::whereIn('kebun', ['kebun-b', 'kebun-2', 'b'])
+        $kebunB = Telemetry::where('kebun', 'kebun-b')
             ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
             ->orderBy('recorded_at', 'desc')
             ->limit(15)
