@@ -26,6 +26,12 @@ class MqttSubscribe extends Command
     private const PPM_TARGET_MAX = 435.0;
     private const PPM_DURATION_DAYS_MIN = 2.5;
     private const PPM_DURATION_DAYS_MAX = 2.5;
+    private const TDS_PEAK_HOUR_WITA = 8;
+    private const TDS_LOW_HOUR_WITA = 6;
+    private const TDS_PEAK_MIN = 895.0;
+    private const TDS_PEAK_MAX = 925.0;
+    private const TDS_LOW_MIN = 445.0;
+    private const TDS_LOW_MAX = 465.0;
     private const OFFLINE_TIMEOUT_SECONDS = 15;
     private const SLEEP_STABLE_SECONDS = 600;
     private const SLEEP_UNSTABLE_SECONDS = 60;
@@ -128,6 +134,15 @@ class MqttSubscribe extends Command
         $kind = strtolower($parts[2] ?? '');
 
         if (!$kebun || !in_array($kind, ['publish', 'status'], true)) {
+            return;
+        }
+
+        $rawKebun = strtolower(trim((string) $kebun));
+        if (!in_array($rawKebun, ['kebun-a', 'kebun-b'], true)) {
+            Log::info('MQTT skipped: only kebun-a and kebun-b are accepted', [
+                'topic' => $topic,
+                'kebun' => $kebun,
+            ]);
             return;
         }
 
@@ -264,82 +279,33 @@ class MqttSubscribe extends Command
 
         $runtimeKey = 'alat-1';
 
+        $target = $this->resolveDailySimulatedTds($bucketNow);
         $runtime = $this->ppmRuntime[$runtimeKey] ?? null;
-        if (!is_array($runtime)) {
-            $runtime = $this->buildNewPpmRuntime($bucketNow);
-        }
 
-        /** @var CarbonImmutable $lastBucket */
-        $lastBucket = $runtime['last_bucket'] instanceof CarbonImmutable
-            ? $runtime['last_bucket']
-            : CarbonImmutable::parse((string) $runtime['last_bucket'], self::PPM_TIMEZONE);
+        if (is_array($runtime) && isset($runtime['last_bucket']) && isset($runtime['value'])) {
+            $lastBucket = $runtime['last_bucket'] instanceof CarbonImmutable
+                ? $runtime['last_bucket']
+                : CarbonImmutable::parse((string) $runtime['last_bucket'], self::PPM_TIMEZONE);
 
-        /** @var CarbonImmutable $cycleStartedAt */
-        $cycleStartedAt = $runtime['cycle_started_at'] instanceof CarbonImmutable
-            ? $runtime['cycle_started_at']
-            : CarbonImmutable::parse((string) $runtime['cycle_started_at'], self::PPM_TIMEZONE);
-
-        /** @var CarbonImmutable $refillAt */
-        $refillAt = $runtime['refill_at'] instanceof CarbonImmutable
-            ? $runtime['refill_at']
-            : CarbonImmutable::parse((string) $runtime['refill_at'], self::PPM_TIMEZONE);
-
-        $durationSeconds = max(1, (int) ($runtime['duration_seconds'] ?? (int) (self::PPM_DURATION_DAYS_MIN * 86400)));
-        $cycleEnd = $cycleStartedAt->addSeconds($durationSeconds);
-
-        if ($bucketNow->lessThanOrEqualTo($lastBucket)) {
-            $simulated = (float) ($runtime['value'] ?? $runtime['start']);
-            if ($bucketNow->lessThan($cycleEnd)) {
-                $simulated = $this->applyIncomingSpikeStep($simulated, $runtime, $bucketNow->hour);
+            $previous = (float) $runtime['value'];
+            if ($bucketNow->lessThanOrEqualTo($lastBucket)) {
+                $current = $previous;
             } else {
-                $simulated = $this->simulateLowPpmValue($simulated, $runtime);
+                // Smoothly move to target per bucket so the descent appears gradual.
+                $current = $previous + (($target - $previous) * 0.25) + $this->randomFloat(-1.2, 1.2);
             }
-            $runtime['value'] = round($simulated);
-            $payload['tds'] = (int) round($runtime['value']);
-            $payload['tds_mentah'] = (int) round($runtime['value']);
-            if (is_array($payload['raw'] ?? null)) {
-                $payload['raw']['tds'] = $payload['tds'];
-            }
-            $this->ppmRuntime[$runtimeKey] = $runtime;
-            return $payload;
-        }
-
-        $current = (float) ($runtime['value'] ?? $runtime['start']);
-        $cursor = $lastBucket;
-
-        // Refill hanya saat pagi, setelah fase turun selesai.
-        if ($bucketNow->greaterThanOrEqualTo($refillAt)) {
-            $runtime = $this->buildNewPpmRuntime($refillAt);
-            $current = (float) ($runtime['value'] ?? $runtime['start']);
-            $cursor = $refillAt;
-            $durationSeconds = max(1, (int) ($runtime['duration_seconds'] ?? (int) (self::PPM_DURATION_DAYS_MIN * 86400)));
-            $cycleStartedAt = $runtime['cycle_started_at'] instanceof CarbonImmutable
-                ? $runtime['cycle_started_at']
-                : CarbonImmutable::parse((string) $runtime['cycle_started_at'], self::PPM_TIMEZONE);
-            $cycleEnd = $cycleStartedAt->addSeconds($durationSeconds);
-        }
-
-        while ($cursor->lessThan($bucketNow)) {
-            $next = $cursor->addSeconds(self::PPM_INTERVAL_SECONDS);
-            if ($next->lessThan($cycleEnd)) {
-                $current = $this->nextSimulatedPpmValue($runtime, $current, $next);
-            } else {
-                $current = $this->simulateLowPpmValue($current, $runtime);
-            }
-            $cursor = $next;
-        }
-
-        if ($bucketNow->lessThan($cycleEnd)) {
-            $current = $this->applyIncomingSpikeStep($current, $runtime, $bucketNow->hour);
         } else {
-            $current = $this->simulateLowPpmValue($current, $runtime);
+            $current = $target + $this->randomFloat(-2.0, 2.0);
         }
-        $runtime['value'] = round($current);
-        $runtime['last_bucket'] = $bucketNow;
-        $this->ppmRuntime[$runtimeKey] = $runtime;
 
-        $payload['tds'] = (int) round((float) $runtime['value']);
-        $payload['tds_mentah'] = (int) round((float) $runtime['value']);
+        $current = round($this->clamp($current, 430.0, 940.0));
+        $this->ppmRuntime[$runtimeKey] = [
+            'last_bucket' => $bucketNow,
+            'value' => $current,
+        ];
+
+        $payload['tds'] = (int) $current;
+        $payload['tds_mentah'] = (int) $current;
         if (is_array($payload['raw'] ?? null)) {
             $payload['raw']['tds'] = $payload['tds'];
             $payload['raw']['tds_mentah'] = $payload['tds_mentah'];
@@ -350,6 +316,31 @@ class MqttSubscribe extends Command
         $this->line($bucketNow->format('H:i:s') . ' ' . (int) $payload['tds']);
 
         return $payload;
+    }
+
+    protected function resolveDailySimulatedTds(CarbonImmutable $atWita): float
+    {
+        $peakToday = $atWita->setHour(self::TDS_PEAK_HOUR_WITA)->setMinute(0)->setSecond(0);
+        $currentPeak = $atWita->greaterThanOrEqualTo($peakToday) ? $peakToday : $peakToday->subDay();
+        $currentLow = $currentPeak->addDay()->setHour(self::TDS_LOW_HOUR_WITA)->setMinute(0)->setSecond(0);
+        $nextPeak = $currentPeak->addDay()->setHour(self::TDS_PEAK_HOUR_WITA)->setMinute(0)->setSecond(0);
+
+        $peakTds = $this->randomFloat(self::TDS_PEAK_MIN, self::TDS_PEAK_MAX);
+        $lowTds = $this->randomFloat(self::TDS_LOW_MIN, self::TDS_LOW_MAX);
+
+        if ($atWita->lessThanOrEqualTo($currentLow)) {
+            $elapsed = (float) $currentPeak->diffInSeconds($atWita, false);
+            $duration = max(1.0, (float) $currentPeak->diffInSeconds($currentLow, false));
+            $progress = $this->clamp($elapsed / $duration, 0.0, 1.0);
+            return $peakTds - (($peakTds - $lowTds) * $progress);
+        }
+
+        if ($atWita->lessThan($nextPeak)) {
+            // Keep the value around low zone until nutrient refill window at 08:00.
+            return $lowTds + $this->randomFloat(-2.5, 2.5);
+        }
+
+        return $peakTds;
     }
 
     protected function buildNewPpmRuntime(CarbonImmutable $startedAtWita): array
@@ -1105,6 +1096,16 @@ class MqttSubscribe extends Command
             $serverNow = now();
             $recordedAt = $serverNow->copy();
             $maxFutureMinutes = (int) env('MQTT_MAX_FUTURE_MINUTES', 2);
+            $kebun = $this->normalizeKebun((string) ($payload['kebun'] ?? ''));
+
+            if (!in_array($kebun, ['kebun-a', 'kebun-b'], true)) {
+                Log::info('Telemetry skipped: device is not allowed', [
+                    'kebun' => $payload['kebun'] ?? null,
+                ]);
+                return;
+            }
+
+            $payload['kebun'] = $kebun;
 
             if (!empty($payload['date']) && !empty($payload['time'])) {
                 try {
@@ -1135,7 +1136,6 @@ class MqttSubscribe extends Command
 
             // Normalize to second precision so duplicate payloads in the same second are ignored.
             $recordedAt = Carbon::parse($recordedAt->format('Y-m-d H:i:s'));
-            $kebun = $payload['kebun'] ?? null;
             $serverGateAt = Carbon::parse($serverNow->format('Y-m-d H:i:s'));
 
             if (!$this->shouldSaveTelemetryByTdsRule($kebun, $serverGateAt, $payload['tds'] ?? null)) {

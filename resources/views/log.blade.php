@@ -28,9 +28,7 @@
                     <select id="filter-device" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white">
                         <option value="">Semua Perangkat</option>
                         <option value="kebun-a">Kebun A</option>
-                        <option value="kebun-1">Kebun 1 (alias Kebun A)</option>
                         <option value="kebun-b">Kebun B</option>
-                        <option value="kebun-2">Kebun 2 (alias Kebun B)</option>
                     </select>
                 </div>
                 
