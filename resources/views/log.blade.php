@@ -165,6 +165,18 @@
             </a>
         </div>
 
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div class="sm:max-w-sm w-full">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Filter Kebun</label>
+                <select id="filter-power-device" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all bg-white">
+                    <option value="">Semua Perangkat</option>
+                    <option value="kebun-a">Kebun A</option>
+                    <option value="kebun-b">Kebun B</option>
+                </select>
+            </div>
+            <div class="text-sm text-gray-500 sm:text-right">Filter ini hanya memengaruhi tabel power di bawah.</div>
+        </div>
+
         <div class="overflow-x-auto">
             <table class="min-w-full text-left border-collapse">
                 <thead class="bg-slate-50 border-b border-slate-200">
@@ -206,6 +218,23 @@
     const intervalMs = 5000;
     let currentPage = 1;
     let currentPowerPage = 1;
+
+    function getDeviceFilterValue() {
+        return document.getElementById('filter-device')?.value || '';
+    }
+
+    function getPowerDeviceFilterValue() {
+        return document.getElementById('filter-power-device')?.value || getDeviceFilterValue();
+    }
+
+    function syncDeviceFilters(value) {
+        ['filter-device', 'filter-power-device'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && el.value !== value) {
+                el.value = value;
+            }
+        });
+    }
 
     function formatTelemetryTimestamp(value, createdAt = null) {
         const parsed = value ? new Date(value) : null;
@@ -464,7 +493,7 @@
             
             const startDate = document.getElementById('filter-start-date')?.value || '';
             const endDate = document.getElementById('filter-end-date')?.value || '';
-            const device = document.getElementById('filter-device')?.value || '';
+            const device = getDeviceFilterValue();
             const interval = document.getElementById('filter-interval')?.value || '';
             
             const params = new URLSearchParams();
@@ -488,7 +517,7 @@
         try {
             if (page !== null) currentPowerPage = page;
 
-            const device = document.getElementById('filter-device')?.value || '';
+            const device = getPowerDeviceFilterValue();
 
             const params = new URLSearchParams();
             params.append('page', String(currentPowerPage));
@@ -508,8 +537,11 @@
     // Add change listeners to filters
     document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-device')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+
+    syncDeviceFilters(getDeviceFilterValue());
 
     // Function to go to specific page
     window.goToPage = function(page) {
