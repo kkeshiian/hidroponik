@@ -381,6 +381,8 @@ class LogController extends Controller
     {
         try {
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
+            $fromDate = $this->normalizedDate($request->input('from'));
+            $toDate = $this->normalizedDate($request->input('to'));
 
             $page = max(1, (int) $request->input('page', 1));
             $perPage = max(1, min((int) $request->input('per_page', 25), 100));
@@ -390,6 +392,12 @@ class LogController extends Controller
 
             if ($request->filled('device')) {
                 $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
+            }
+            if ($fromDate) {
+                $query->where('timestamp', '>=', $fromDate . ' 00:00:00');
+            }
+            if ($toDate) {
+                $query->where('timestamp', '<=', $toDate . ' 23:59:59');
             }
 
             $total = (int) $query->count();
@@ -459,6 +467,8 @@ class LogController extends Controller
         $callback = function () use ($request) {
             $handle = fopen('php://output', 'w');
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
+            $fromDate = $this->normalizedDate($request->input('from'));
+            $toDate = $this->normalizedDate($request->input('to'));
             fputcsv($handle, ['Waktu', 'Perangkat', 'State', 'Mode', 'Current (A)', 'Voltage (V)', 'Watt-hour (Wh)']);
 
             try {
@@ -466,6 +476,12 @@ class LogController extends Controller
 
                 if ($request->filled('device')) {
                     $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
+                }
+                if ($fromDate) {
+                    $query->where('timestamp', '>=', $fromDate . ' 00:00:00');
+                }
+                if ($toDate) {
+                    $query->where('timestamp', '<=', $toDate . ' 23:59:59');
                 }
 
                 $energyByDevice = [];
