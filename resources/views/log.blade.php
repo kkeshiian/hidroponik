@@ -159,7 +159,7 @@
                 <h3 class="text-xl font-semibold text-gray-800">Power Consumption</h3>
                 <div class="text-sm text-gray-500">Riwayat realtime estimasi daya.</div>
             </div>
-            <a href="{{ route('log.power.export') }}"
+            <a href="{{ route('log.power.export') }}" id="power-export-link"
                 class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg shadow-sm transition text-center">
                 Download CSV Power
             </a>
@@ -234,6 +234,22 @@
                 el.value = value;
             }
         });
+    }
+
+    function updatePowerExportLink() {
+        const link = document.getElementById('power-export-link');
+        if (!link) return;
+
+        const device = getPowerDeviceFilterValue();
+        const url = new URL(link.href, window.location.origin);
+
+        if (device) {
+            url.searchParams.set('device', device);
+        } else {
+            url.searchParams.delete('device');
+        }
+
+        link.href = url.toString();
     }
 
     function formatTelemetryTimestamp(value, createdAt = null) {
@@ -537,11 +553,12 @@
     // Add change listeners to filters
     document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
 
     syncDeviceFilters(getDeviceFilterValue());
+    updatePowerExportLink();
 
     // Function to go to specific page
     window.goToPage = function(page) {
