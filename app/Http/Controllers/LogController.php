@@ -458,25 +458,41 @@ class LogController extends Controller
 
         $callback = function () use ($request) {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Waktu', 'Perangkat', 'Current (A)']);
+            $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
+            fputcsv($handle, ['Waktu', 'Perangkat', 'State', 'Mode', 'Current (A)', 'Voltage (V)', 'Watt-hour (Wh)']);
 
             try {
-                $query = PowerLog::query()->orderByDesc('timestamp');
+                $query = PowerLog::query()->orderBy('timestamp');
 
                 if ($request->filled('device')) {
                     $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
                 }
 
-                $query->chunk(300, function ($rows) use ($handle) {
+                $energyByDevice = [];
+
+                $query->chunk(300, function ($rows) use ($handle, $intervalSeconds, &$energyByDevice) {
                     foreach ($rows as $r) {
+                        $normalizedDevice = $this->normalizeKebunLabel($r->device_name);
+                        $currentA = round(((float) $r->current_ma) / 1000, 6);
+                        $voltageV = round($this->estimatedVoltage($normalizedDevice, $r->timestamp ?? $r->created_at), 2);
+                        $powerW = $voltageV * $currentA;
+                        $deltaWh = round($powerW * ($intervalSeconds / 3600.0), 5);
+
+                        $energyByDevice[$normalizedDevice] = ($energyByDevice[$normalizedDevice] ?? 0.0) + $deltaWh;
+
                         $timestamp = $r->timestamp;
                         if ($timestamp) {
                             $timestamp = $timestamp->copy()->timezone(config('app.timezone'))->addHour()->format('Y-m-d H:i:s');
                         }
+
                         fputcsv($handle, [
                             $timestamp,
-                            $this->normalizeKebunLabel($r->device_name),
-                            round(((float) $r->current_ma) / 1000, 6),
+                            $normalizedDevice,
+                            $r->state,
+                            $r->mode,
+                            $currentA,
+                            $voltageV,
+                            number_format($energyByDevice[$normalizedDevice], 5, '.', ''),
                         ]);
                     }
                 });
