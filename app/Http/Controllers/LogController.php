@@ -321,6 +321,8 @@ class LogController extends Controller
     public function export(Request $request)
     {
         $filename = 'telemetry_export_' . date('Ymd_His') . '.csv';
+        $fromDate = $this->normalizedDate($request->input('from'));
+        $toDate = $this->normalizedDate($request->input('to'));
 
         $callback = function () use ($request) {
             $handle = fopen('php://output', 'w');
@@ -332,6 +334,17 @@ class LogController extends Controller
                     ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                     ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
                     ->orderBy('recorded_at', 'desc');
+
+                if ($request->filled('kebun')) {
+                    $query->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
+                }
+                if ($fromDate) {
+                    $query->where('recorded_at', '>=', $fromDate . ' 00:00:00');
+                }
+                if ($toDate) {
+                    $query->where('recorded_at', '<=', $toDate . ' 23:59:59');
+                }
+
                 $query->chunk(200, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
                         $recordedAt = $r->recorded_at;

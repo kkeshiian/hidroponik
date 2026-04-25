@@ -47,7 +47,7 @@
             
             <!-- Export Button -->
             <div class="lg:min-w-[180px]">
-                <a href="{{ route('log.export') }}" 
+                <a href="{{ route('log.export') }}" id="history-export-link"
                    class="block w-full bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-3 rounded-lg shadow-sm transition-all text-center whitespace-nowrap">
                     Export CSV
                 </a>
@@ -249,6 +249,36 @@
             url.searchParams.set('device', device);
         } else {
             url.searchParams.delete('device');
+        }
+
+        if (startDate) {
+            url.searchParams.set('from', startDate);
+        } else {
+            url.searchParams.delete('from');
+        }
+
+        if (endDate) {
+            url.searchParams.set('to', endDate);
+        } else {
+            url.searchParams.delete('to');
+        }
+
+        link.href = url.toString();
+    }
+
+    function updateHistoryExportLink() {
+        const link = document.getElementById('history-export-link');
+        if (!link) return;
+
+        const device = getDeviceFilterValue();
+        const startDate = document.getElementById('filter-start-date')?.value || '';
+        const endDate = document.getElementById('filter-end-date')?.value || '';
+        const url = new URL(link.href, window.location.origin);
+
+        if (device) {
+            url.searchParams.set('kebun', device);
+        } else {
+            url.searchParams.delete('kebun');
         }
 
         if (startDate) {
@@ -569,13 +599,14 @@
     }
 
     // Add change listeners to filters
-    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; updatePowerExportLink(); fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; updatePowerExportLink(); fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
-    document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-start-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; updateHistoryExportLink(); updatePowerExportLink(); fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-end-date')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; updateHistoryExportLink(); updatePowerExportLink(); fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updateHistoryExportLink(); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updateHistoryExportLink(); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
 
     syncDeviceFilters(getDeviceFilterValue());
+    updateHistoryExportLink();
     updatePowerExportLink();
 
     // Function to go to specific page
