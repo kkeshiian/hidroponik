@@ -324,7 +324,7 @@ class LogController extends Controller
         $fromDate = $this->normalizedDate($request->input('from'));
         $toDate = $this->normalizedDate($request->input('to'));
 
-        $callback = function () use ($request) {
+        $callback = function () use ($request, $fromDate, $toDate) {
             $handle = fopen('php://output', 'w');
             // Header mengikuti kolom di tabel Data History.
             fputcsv($handle, ['Tanggal', 'Waktu', 'Perangkat', 'pH', 'TDS (ppm)', 'Suhu (°C)']);
@@ -477,7 +477,7 @@ class LogController extends Controller
     {
         $filename = 'power_current_export_' . date('Ymd_His') . '.csv';
 
-        $callback = function () use ($request) {
+        $callback = function () use ($request, $fromDate, $toDate) {
             $handle = fopen('php://output', 'w');
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
             $fromDate = $this->normalizedDate($request->input('from'));
