@@ -476,16 +476,16 @@ class LogController extends Controller
     public function powerExport(Request $request)
     {
         $filename = 'power_current_export_' . date('Ymd_His') . '.csv';
+        $fromDate = $this->normalizedDate($request->input('from'));
+        $toDate = $this->normalizedDate($request->input('to'));
 
         $callback = function () use ($request, $fromDate, $toDate) {
             $handle = fopen('php://output', 'w');
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
-            $fromDate = $this->normalizedDate($request->input('from'));
-            $toDate = $this->normalizedDate($request->input('to'));
             fputcsv($handle, ['Waktu', 'Perangkat', 'State', 'Mode', 'Current (A)', 'Voltage (V)', 'Watt-hour (Wh)']);
 
             try {
-                $query = PowerLog::query()->orderBy('timestamp');
+                $query = PowerLog::query()->orderByDesc('timestamp');
 
                 if ($request->filled('device')) {
                     $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
