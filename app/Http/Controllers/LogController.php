@@ -73,6 +73,13 @@ class LogController extends Controller
         }
     }
 
+    private function resolveSortDirection(Request $request): string
+    {
+        $value = strtolower(trim((string) $request->input('sort', 'newest')));
+
+        return $value === 'oldest' ? 'asc' : 'desc';
+    }
+
     private function kebunAliases(?string $kebun): array
     {
         $value = strtolower(trim((string) $kebun));
@@ -106,6 +113,7 @@ class LogController extends Controller
     public function index(Request $request)
     {
         try {
+            $sortDirection = $this->resolveSortDirection($request);
             $query = Telemetry::query()
                 ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                 ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
@@ -132,7 +140,7 @@ class LogController extends Controller
                 'avg_temp' => round((float) $query->avg('suhu'), 2),
             ];
 
-            $rows = $query->orderBy('recorded_at', 'desc')->paginate(25);
+            $rows = $query->orderBy('recorded_at', $sortDirection)->paginate(25);
 
             return view('log', compact('rows', 'stats'));
         } catch (\Illuminate\Database\QueryException $e) {
@@ -160,6 +168,7 @@ class LogController extends Controller
     public function api(Request $request)
     {
         try {
+            $sortDirection = $this->resolveSortDirection($request);
             $query = Telemetry::query()
                 ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                 ->where('recorded_at', '<=', $this->latestAllowedRecordedAt());
@@ -237,7 +246,7 @@ class LogController extends Controller
             $skip = ($page - 1) * $perPage;
             
             $total = $query->count();
-            $rows = $query->orderBy('recorded_at', 'desc')->skip($skip)->take($perPage)->get();
+            $rows = $query->orderBy('recorded_at', $sortDirection)->skip($skip)->take($perPage)->get();
             
             // Calculate stats on filtered data
             $statsQuery = Telemetry::query()
@@ -323,6 +332,7 @@ class LogController extends Controller
         $filename = 'telemetry_export_' . date('Ymd_His') . '.csv';
         $fromDate = $this->normalizedDate($request->input('from'));
         $toDate = $this->normalizedDate($request->input('to'));
+        $sortDirection = $this->resolveSortDirection($request);
 
         $callback = function () use ($request, $fromDate, $toDate) {
             $handle = fopen('php://output', 'w');
@@ -333,7 +343,7 @@ class LogController extends Controller
                 $query = Telemetry::query()
                     ->whereIn('kebun', ['kebun-a', 'kebun-b'])
                     ->where('recorded_at', '<=', $this->latestAllowedRecordedAt())
-                    ->orderBy('recorded_at', 'desc');
+                    ->orderBy('recorded_at', $sortDirection);
 
                 if ($request->filled('kebun')) {
                     $query->whereIn('kebun', $this->kebunAliases($request->input('kebun')));
@@ -396,12 +406,13 @@ class LogController extends Controller
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
             $fromDate = $this->normalizedDate($request->input('from'));
             $toDate = $this->normalizedDate($request->input('to'));
+            $sortDirection = $this->resolveSortDirection($request);
 
             $page = max(1, (int) $request->input('page', 1));
             $perPage = max(1, min((int) $request->input('per_page', 25), 100));
             $offset = ($page - 1) * $perPage;
 
-            $query = PowerLog::query()->orderByDesc('timestamp');
+            $query = PowerLog::query()->orderBy('timestamp', $sortDirection);
 
             if ($request->filled('device')) {
                 $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
@@ -428,7 +439,7 @@ class LogController extends Controller
             $energyByDevice = [];
             $computedRows = [];
 
-            foreach ($rows->sortBy('timestamp')->values() as $row) {
+            foreach ($rows->sortBy('timestamp', SORT_REGULAR, $sortDirection === 'desc')->values() as $row) {
                 $device = (string) ($row->device_name ?? 'unknown');
                 $normalizedDevice = $this->normalizeKebunLabel($device);
                 $currentMa = (float) ($row->current_ma ?? 0.0);
@@ -478,14 +489,15 @@ class LogController extends Controller
         $filename = 'power_current_export_' . date('Ymd_His') . '.csv';
         $fromDate = $this->normalizedDate($request->input('from'));
         $toDate = $this->normalizedDate($request->input('to'));
+        $sortDirection = $this->resolveSortDirection($request);
 
-        $callback = function () use ($request, $fromDate, $toDate) {
+        $callback = function () use ($request, $fromDate, $toDate, $sortDirection) {
             $handle = fopen('php://output', 'w');
             $intervalSeconds = $this->resolvePowerIntervalSeconds($request);
             fputcsv($handle, ['Waktu', 'Perangkat', 'State', 'Mode', 'Current (A)', 'Voltage (V)', 'Watt-hour (Wh)']);
 
             try {
-                $query = PowerLog::query()->orderByDesc('timestamp');
+                $query = PowerLog::query()->orderBy('timestamp', $sortDirection);
 
                 if ($request->filled('device')) {
                     $query->whereIn('device_name', $this->kebunAliases($request->input('device')));
@@ -499,8 +511,10 @@ class LogController extends Controller
 
                 $energyByDevice = [];
 
-                $query->chunk(300, function ($rows) use ($handle, $intervalSeconds, &$energyByDevice) {
-                    foreach ($rows as $r) {
+                $query->chunk(300, function ($rows) use ($handle, $intervalSeconds, &$energyByDevice, $sortDirection) {
+                    $orderedRows = $sortDirection === 'desc' ? $rows : $rows->sortBy('timestamp');
+
+                    foreach ($orderedRows as $r) {
                         $normalizedDevice = $this->normalizeKebunLabel($r->device_name);
                         $currentA = round(((float) $r->current_ma) / 1000, 6);
                         $voltageV = round($this->estimatedVoltage($normalizedDevice, $r->timestamp ?? $r->created_at), 2);
