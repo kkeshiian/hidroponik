@@ -43,6 +43,14 @@
                         <option value="1440">Per 1 Hari</option>
                     </select>
                 </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Urutan Data</label>
+                    <select id="filter-sort" class="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white">
+                        <option value="newest">Terbaru ke Terlama</option>
+                        <option value="oldest">Terlama ke Terbaru</option>
+                    </select>
+                </div>
             </div>
             
             <!-- Export Button -->
@@ -227,6 +235,10 @@
         return document.getElementById('filter-power-device')?.value || getDeviceFilterValue();
     }
 
+    function getSortFilterValue() {
+        return document.getElementById('filter-sort')?.value || 'newest';
+    }
+
     function syncDeviceFilters(value) {
         ['filter-device', 'filter-power-device'].forEach((id) => {
             const el = document.getElementById(id);
@@ -243,6 +255,7 @@
         const device = getPowerDeviceFilterValue();
         const startDate = document.getElementById('filter-start-date')?.value || '';
         const endDate = document.getElementById('filter-end-date')?.value || '';
+        const sort = getSortFilterValue();
         const url = new URL(link.href, window.location.origin);
 
         if (device) {
@@ -263,6 +276,12 @@
             url.searchParams.delete('to');
         }
 
+        if (sort) {
+            url.searchParams.set('sort', sort);
+        } else {
+            url.searchParams.delete('sort');
+        }
+
         link.href = url.toString();
     }
 
@@ -273,6 +292,7 @@
         const device = getDeviceFilterValue();
         const startDate = document.getElementById('filter-start-date')?.value || '';
         const endDate = document.getElementById('filter-end-date')?.value || '';
+        const sort = getSortFilterValue();
         const url = new URL(link.href, window.location.origin);
 
         if (device) {
@@ -291,6 +311,12 @@
             url.searchParams.set('to', endDate);
         } else {
             url.searchParams.delete('to');
+        }
+
+        if (sort) {
+            url.searchParams.set('sort', sort);
+        } else {
+            url.searchParams.delete('sort');
         }
 
         link.href = url.toString();
@@ -555,12 +581,14 @@
             const endDate = document.getElementById('filter-end-date')?.value || '';
             const device = getDeviceFilterValue();
             const interval = document.getElementById('filter-interval')?.value || '';
+            const sort = getSortFilterValue();
             
             const params = new URLSearchParams();
             if (startDate) params.append('from', startDate);
             if (endDate) params.append('to', endDate);
             if (device) params.append('kebun', device);
             if (interval) params.append('interval', interval);
+            if (sort) params.append('sort', sort);
             params.append('page', currentPage);
             
             const url = '/api/logs' + (params.toString() ? '?' + params.toString() : '');
@@ -580,6 +608,7 @@
             const device = getPowerDeviceFilterValue();
             const startDate = document.getElementById('filter-start-date')?.value || '';
             const endDate = document.getElementById('filter-end-date')?.value || '';
+            const sort = getSortFilterValue();
 
             const params = new URLSearchParams();
             params.append('page', String(currentPowerPage));
@@ -587,6 +616,7 @@
             if (device) params.append('device', device);
             if (startDate) params.append('from', startDate);
             if (endDate) params.append('to', endDate);
+            if (sort) params.append('sort', sort);
 
             const res = await fetch('/api/power-logs?' + params.toString());
             if (!res.ok) return;
@@ -604,6 +634,7 @@
     document.getElementById('filter-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updateHistoryExportLink(); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-power-device')?.addEventListener('change', (event) => { syncDeviceFilters(event.target.value || ''); updateHistoryExportLink(); updatePowerExportLink(); currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
     document.getElementById('filter-interval')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; fetchLogs(); fetchPowerLogs(); });
+    document.getElementById('filter-sort')?.addEventListener('change', () => { currentPage = 1; currentPowerPage = 1; updateHistoryExportLink(); updatePowerExportLink(); fetchLogs(); fetchPowerLogs(); });
 
     syncDeviceFilters(getDeviceFilterValue());
     updateHistoryExportLink();
